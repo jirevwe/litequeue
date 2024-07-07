@@ -15,7 +15,7 @@ type Worker struct {
 	// channel to signal the worker to stop working
 	quit chan bool
 
-	// used to signal the pool to clean up itself
+	// used to signal the pool to clean itself up
 	wg *sync.WaitGroup
 }
 

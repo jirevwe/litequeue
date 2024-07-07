@@ -26,11 +26,13 @@ type TestTask struct {
 }
 
 func (t *TestTask) Init(a any) {
-
+	//TODO implement me
+	panic("implement me")
 }
 
 func (t *TestTask) CleanUp() {
-
+	//TODO implement me
+	panic("implement me")
 }
 
 func NewTestTask(executeFunc func() error, wg *sync.WaitGroup) *TestTask {

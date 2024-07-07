@@ -23,9 +23,6 @@ type Pool interface {
 }
 
 type WorkerPool struct {
-	// number of workers in the pool
-	numWorkers uint
-
 	// channel from which workers consume work
 	tasks chan Task
 
@@ -55,11 +52,11 @@ func (p *WorkerPool) Start() {
 }
 
 func (p *WorkerPool) startWorkers() {
-	for i := 0; i < int(p.numWorkers); i++ {
+	for i := 0; i < len(p.workers); i++ {
 		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.wg)
-		p.wg.Add(1)
-		p.workers = append(p.workers, w)
+		p.workers[i] = w
 		go w.Start()
+		p.wg.Add(1)
 	}
 }
 
@@ -75,8 +72,7 @@ func (p *WorkerPool) AddWorkNonBlocking(t Task) {
 
 func (p *WorkerPool) Stop() error {
 	p.stop.Do(func() {
-		// We need to close the "tasks" channel,
-		// We also need to decide:
+		// We need to close the "tasks" channel, and need to decide two things:
 		// a) should all the queued tasks be processed before returning?
 		// b) should Stop() block until all tasks are done and the workers return?
 
@@ -92,6 +88,7 @@ func (p *WorkerPool) Stop() error {
 		// wait for all of them to clean themselves up
 		p.wg.Wait()
 
+		// close the channel on which we receive new jobs
 		close(p.tasks)
 
 		log.Printf("worker pool has been stopped\n")
@@ -117,16 +114,17 @@ func (p *WorkerPool) AddWork(t Task) error {
 }
 
 func NewWorkerPool(numWorkers, size uint) Pool {
+	// size of the internal queue
 	tasks := make(chan Task, size)
 
 	return &WorkerPool{
-		numWorkers:     numWorkers,
+		// number of workers in the pool
+		workers:        make([]*Worker, numWorkers),
 		tasks:          tasks,
 		start:          sync.Once{},
 		stop:           sync.Once{},
 		globalQuit:     make(chan bool, 1),
 		stopInProgress: false,
-		workers:        []*Worker{},
 		mutex:          sync.Mutex{},
 		wg:             &sync.WaitGroup{},
 	}

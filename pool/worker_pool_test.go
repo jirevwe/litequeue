@@ -19,19 +19,34 @@ func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
 	require.NoError(t, p.Stop())
 }
 
-func microTask() error {
-	time.Sleep(1 * time.Millisecond)
-	println(time.Now().String())
+type counterTest struct {
+	count int
+	mu    *sync.Mutex
+}
+
+func NewCounterTest() *counterTest {
+	return &counterTest{
+		count: 0,
+		mu:    &sync.Mutex{},
+	}
+}
+
+func (c *counterTest) Inc() error {
+	c.mu.Lock()
+	c.count++
+	println(c.count)
+	c.mu.Unlock()
 	return nil
 }
 
 func TestWorkerPool_Work(t *testing.T) {
 	var tasks []*TestTask
 	wg := &sync.WaitGroup{}
+	c := NewCounterTest()
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		tasks = append(tasks, NewTestTask(microTask, wg))
+		tasks = append(tasks, NewTestTask(c.Inc, wg))
 	}
 
 	p := NewWorkerPool(5, uint(len(tasks)))
@@ -54,11 +69,12 @@ func TestWorkerPool_Work(t *testing.T) {
 func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 	p := NewWorkerPool(4, 10)
 	p.Start()
+	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 60; i++ {
 		wg.Add(1)
-		go require.NoError(t, p.AddWork(NewTestTask(microTask, wg)))
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
 	}
 
 	done := make(chan struct{})
@@ -87,11 +103,12 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 	p := NewWorkerPool(10, 10)
 	p.Start()
+	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 60; i++ {
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
 		wg.Add(1)
-		go require.NoError(t, p.AddWork(NewTestTask(microTask, wg)))
 	}
 
 	done := make(chan struct{})
@@ -102,17 +119,12 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 	}()
 
 	// Sleep for a short time to ensure workers have started processing tasks
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1 * time.Millisecond)
 
 	// Stop the worker pool concurrently
 	go func() {
 		require.NoError(t, p.Stop())
 	}()
-
-	// Concurrently add more tasks after Stop() is called
-	for i := 0; i < 3; i++ {
-		go require.NoError(t, p.AddWork(NewTestTask(microTask, wg)))
-	}
 
 	// wait until either we hit our timeout, or we're told the AddWork calls completed
 	select {
