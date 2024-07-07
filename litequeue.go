@@ -1,0 +1,5 @@
+package litequeue
+
+func Main() {
+
+}
