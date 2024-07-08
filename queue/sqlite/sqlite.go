@@ -98,14 +98,23 @@ func (s *Sqlite) Write(ctx context.Context, queueName string, message []byte) er
 }
 
 type id struct {
-	Id string
+	Id string `db:"id"`
+}
+
+type LiteMessage struct {
+	Id        string `json:"id" db:"id"`
+	Status    string `json:"status" db:"status"`
+	Message   string `json:"message" db:"message"`
+	VisibleAt string `json:"visible_at" db:"visible_at"`
+	CreatedAt string `json:"created_at" db:"created_at"`
+	UpdatedAt string `json:"updated_at" db:"updated_at"`
 }
 
 // Consume fetches the first visible item from a queue
-func (s *Sqlite) Consume(ctx context.Context, queueName string) (message []byte, err error) {
+func (s *Sqlite) Consume(ctx context.Context, queueName string) (message LiteMessage, err error) {
 	name := fmt.Sprintf("queues__%s", queueName)
-	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' limit 1;`
-	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1;`
+	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
+	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1 returning *;`
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// read one message from the queue
@@ -119,25 +128,28 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message []byte,
 			return rowScanErr
 		}
 
-		log.Printf("val: %+v\n", rowValue)
+		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id)
+		if row.Err() != nil {
+			return row.Err()
+		}
 
-		_, err = tx.ExecContext(ctx, updateItemStatus, rowValue.Id)
-		if err != nil {
-			return err
+		if rowScanErr := row.StructScan(&message); rowScanErr != nil {
+			return rowScanErr
 		}
 
 		return nil
 	})
 
-	return nil, err
+	return message, err
 }
 
 // Delete removes a message from a queue
 func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (err error) {
 	name := fmt.Sprintf("queues__%s", queueName)
+	archivedName := fmt.Sprintf("queues__%s_archived", queueName)
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
-		writeQuery := `insert into ` + name + ` (id, message, visible_at) values ($1, $2, $3)`
+		writeQuery := `insert into ` + archivedName + ` (id, message, visible_at) values ($1, $2, $3)`
 		_, innerErr := tx.ExecContext(ctx, writeQuery, msgId)
 		if innerErr != nil {
 			return innerErr

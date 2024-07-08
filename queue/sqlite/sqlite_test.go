@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestSqlite_WriteOne(t *testing.T) {
@@ -24,9 +23,10 @@ func TestSqlite_WriteConcurrently(t *testing.T) {
 	require.NoError(t, err)
 	wg := &sync.WaitGroup{}
 	ctx := context.Background()
+	message := []byte("hello world")
 
-	for i := 0; i < 1; i++ {
-		go writeOne(t, ctx, s, queueName, wg)
+	for i := 0; i < 10; i++ {
+		go writeOne(t, ctx, s, queueName, message, wg)
 		wg.Add(1)
 	}
 	wg.Wait()
@@ -38,32 +38,27 @@ func TestSqlite_Consume(t *testing.T) {
 	queueName := "test_queue"
 	s, err := NewSqlite(queueName)
 	require.NoError(t, err)
-	wg := &sync.WaitGroup{}
 	ctx := context.Background()
+	message := []byte("hello world")
 
 	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		writeOne(t, ctx, s, queueName, wg)
+		writeOne(t, ctx, s, queueName, []byte(fmt.Sprintf("%s_%d", message, i)), nil)
 	}
 
 	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		consumeOne(t, ctx, s, queueName, wg)
+		msg, consumeErr := s.Consume(ctx, queueName)
+		require.NoError(t, consumeErr)
+		require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
 	}
-	wg.Wait()
 
 	require.NoError(t, s.Truncate(ctx, queueName))
 }
 
-func writeOne(t *testing.T, ctx context.Context, ss *Sqlite, qName string, w *sync.WaitGroup) {
-	err := ss.Write(ctx, qName, []byte(fmt.Sprintf(`{ "now": "%v" }`, time.Now().String())))
+func writeOne(t *testing.T, ctx context.Context, ss *Sqlite, qName string, message []byte, w *sync.WaitGroup) {
+	err := ss.Write(ctx, qName, message)
 	require.NoError(t, err)
-	w.Done()
-}
 
-func consumeOne(t *testing.T, ctx context.Context, ss *Sqlite, qName string, w *sync.WaitGroup) {
-	msg, err := ss.Consume(ctx, qName)
-	require.NoError(t, err)
-	t.Logf("Got message: %v", string(msg))
-	w.Done()
+	if w != nil {
+		w.Done()
+	}
 }
