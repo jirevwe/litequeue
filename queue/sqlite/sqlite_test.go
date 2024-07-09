@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSqlite_WriteOne(t *testing.T) {
@@ -44,6 +45,8 @@ func TestSqlite_Consume(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		writeOne(t, ctx, s, queueName, []byte(fmt.Sprintf("%s_%d", message, i)), nil)
 	}
+
+	time.Sleep(2 * time.Second)
 
 	for i := 0; i < 2; i++ {
 		msg, consumeErr := s.Consume(ctx, queueName)

@@ -82,7 +82,7 @@ func NewSqlite(queueName string) (*Sqlite, error) {
 // Write puts an item on a queue
 func (s *Sqlite) Write(ctx context.Context, queueName string, message []byte) error {
 	// todo: expose delay as a configurable value
-	now := time.Now().Add(30 * time.Second)
+	now := time.Now().Add(time.Second)
 	nowFormatted := now.Format(rfc3339Milli)
 	name := fmt.Sprintf(" queues__%s", queueName)
 
