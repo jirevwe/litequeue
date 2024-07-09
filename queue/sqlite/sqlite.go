@@ -149,15 +149,19 @@ func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (er
 	archivedName := fmt.Sprintf("queues__%s_archived", queueName)
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
-		writeQuery := `insert into ` + archivedName + ` (id, message, visible_at) values ($1, $2, $3)`
-		_, innerErr := tx.ExecContext(ctx, writeQuery, msgId)
-		if innerErr != nil {
-			return innerErr
+		deleteQuery := `delete from ` + name + ` where id = $1 returning *`
+		row := tx.QueryRowxContext(ctx, deleteQuery, msgId)
+		if row.Err() != nil {
+			return row.Err()
 		}
 
-		// write to the queues
-		deleteQuery := `delete from ` + name + ` where id = $1`
-		_, innerErr = tx.ExecContext(ctx, deleteQuery, msgId)
+		var msg LiteMessage
+		if rowScanErr := row.StructScan(&msg); rowScanErr != nil {
+			return rowScanErr
+		}
+
+		writeQuery := `insert into ` + archivedName + ` (id, message, status, created_at, updated_at) values ($1, $2, $3, $4, $5)`
+		_, innerErr := tx.ExecContext(ctx, writeQuery, msg.Id, []byte(msg.Message), msg.Status, msg.CreatedAt, msg.UpdatedAt)
 		if innerErr != nil {
 			return innerErr
 		}
@@ -168,7 +172,7 @@ func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (er
 }
 
 func (s *Sqlite) Truncate(ctx context.Context, queueName string) (err error) {
-	_, err = s.db.ExecContext(ctx, fmt.Sprintf("drop table queues__%s", queueName))
+	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`delete from queues__%s where id > '0'`, queueName))
 	if err != nil {
 		return err
 	}
