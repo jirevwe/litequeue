@@ -37,11 +37,9 @@ func (w *Worker) Start() {
 	}()
 
 	for {
-		select {
-		case <-w.quit:
-			log.Printf("stopping worker %s with quit channel\n", w.id)
-			return
-		case task, ok := <-w.tasks:
+		// if there are tasks, process one
+		if len(w.tasks) > 0 {
+			task, ok := <-w.tasks
 			if !ok {
 				log.Printf("stopping worker %s with closed tasks channel\n", w.id)
 				return
@@ -50,6 +48,20 @@ func (w *Worker) Start() {
 			if err := task.Execute(); err != nil {
 				task.OnFailure(err)
 			}
+
+			continue
+		}
+
+		// check for quit
+		select {
+		case <-w.quit:
+			log.Printf("stopping worker %s with quit channel\n", w.id)
+
+			// when quit is called, how can I ensure that the currently executing task is completed
+			// before returning?
+			return
+		default:
+			// do nothing
 		}
 	}
 }

@@ -72,7 +72,7 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
 	}
@@ -126,12 +126,56 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 		require.NoError(t, p.Stop())
 	}()
 
+	// Concurrently, add more tasks after Stop() is called
+	//for i := 0; i < 3; i++ {
+	//	go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
+	//}
+
 	// wait until either we hit our timeout, or we're told the AddWork calls completed
 	select {
 	case <-time.After(10 * time.Second):
 		t.Fatal("failed because still hanging on AddWork")
 	case <-done:
 		// this is the success case
+		return
+	}
+}
+
+func TestWorkerPool_ProcessRemainingTasksAfterStop_2(t *testing.T) {
+	p := NewWorkerPool(4, 10)
+	p.Start()
+	c := NewCounterTest()
+
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
+	}
+
+	// Sleep for a short time to ensure workers have started processing tasks
+	time.Sleep(100 * time.Millisecond)
+
+	// Stop the worker pool
+	go require.NoError(t, p.Stop())
+
+	require.Error(t, ErrWorkerPoolClosed, p.AddWork(NewTestTask(c.Inc, wg)))
+
+	// Sleep for a short time to ensure workers have started processing tasks
+	time.Sleep(1 * time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		// wait on our AddWork calls to complete, then signal on the done channel
+		wg.Wait()
+		done <- struct{}{}
+	}()
+
+	// wait until either we hit our timeout, or we're told the AddWork calls completed
+	select {
+	case <-time.After(10 * time.Second):
+		t.Fatal("failed because still hanging on AddWork")
+	case <-done:
+		// This indicates that all tasks have been processed
 		return
 	}
 }

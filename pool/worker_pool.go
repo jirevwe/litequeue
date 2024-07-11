@@ -35,11 +35,7 @@ type WorkerPool struct {
 	// channel to signal all the workers to stop
 	globalQuit chan bool
 
-	stopInProgress bool
-
 	workers []*Worker
-
-	mutex sync.Mutex
 
 	wg *sync.WaitGroup
 }
@@ -55,8 +51,8 @@ func (p *WorkerPool) startWorkers() {
 	for i := 0; i < len(p.workers); i++ {
 		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.wg)
 		p.workers[i] = w
-		go w.Start()
 		p.wg.Add(1)
+		go w.Start()
 	}
 }
 
@@ -76,20 +72,16 @@ func (p *WorkerPool) Stop() error {
 		// a) should all the queued tasks be processed before returning?
 		// b) should Stop() block until all tasks are done and the workers return?
 
-		p.mutex.Lock()
-		p.stopInProgress = true
-		p.mutex.Unlock()
-
 		log.Printf("stopping worker pool")
 
 		// tell each worker to stop processing tasks
 		close(p.globalQuit)
 
-		// wait for all of them to clean themselves up
-		p.wg.Wait()
-
 		// close the channel on which we receive new jobs
 		close(p.tasks)
+
+		// wait for all of them to clean themselves up
+		p.wg.Wait()
 
 		log.Printf("worker pool has been stopped\n")
 	})
@@ -99,16 +91,12 @@ func (p *WorkerPool) Stop() error {
 // AddWork adds work to the WorkerPool. If the channel buffer is full (or 0) and
 // all workers are occupied, this will block until work is consumed or Stop() is called.
 func (p *WorkerPool) AddWork(t Task) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	println("WorkerPool.AddWork")
-
-	if p.stopInProgress {
+	select {
+	case <-p.globalQuit:
 		return ErrWorkerPoolClosed
+	default:
+		p.tasks <- t
 	}
-
-	p.tasks <- t
 
 	return nil
 }
@@ -119,13 +107,11 @@ func NewWorkerPool(numWorkers, size uint) Pool {
 
 	return &WorkerPool{
 		// number of workers in the pool
-		workers:        make([]*Worker, numWorkers),
-		tasks:          tasks,
-		start:          sync.Once{},
-		stop:           sync.Once{},
-		globalQuit:     make(chan bool, 1),
-		stopInProgress: false,
-		mutex:          sync.Mutex{},
-		wg:             &sync.WaitGroup{},
+		workers:    make([]*Worker, numWorkers),
+		tasks:      tasks,
+		start:      sync.Once{},
+		stop:       sync.Once{},
+		globalQuit: make(chan bool, 1),
+		wg:         &sync.WaitGroup{},
 	}
 }

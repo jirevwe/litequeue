@@ -59,8 +59,6 @@ func (t *TestTask) OnFailure(e error) {
 	t.mFailure.Lock()
 	defer t.mFailure.Unlock()
 
-	// todo: use logger to log error
-
 	t.failureHandled = true
 }
 
