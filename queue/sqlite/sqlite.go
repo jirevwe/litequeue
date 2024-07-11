@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"github.com/jirevwe/litequeue/queue"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/ulid/v2"
@@ -16,7 +17,7 @@ const (
 )
 
 type Sqlite struct {
-	logger log.Logger
+	logger *log.Logger
 	db     *sqlx.DB
 }
 
@@ -101,17 +102,8 @@ type id struct {
 	Id string `db:"id"`
 }
 
-type LiteMessage struct {
-	Id        string `json:"id" db:"id"`
-	Status    string `json:"status" db:"status"`
-	Message   string `json:"message" db:"message"`
-	VisibleAt string `json:"visible_at" db:"visible_at"`
-	CreatedAt string `json:"created_at" db:"created_at"`
-	UpdatedAt string `json:"updated_at" db:"updated_at"`
-}
-
 // Consume fetches the first visible item from a queue
-func (s *Sqlite) Consume(ctx context.Context, queueName string) (message LiteMessage, err error) {
+func (s *Sqlite) Consume(ctx context.Context, queueName string) (message *queue.LiteMessage, err error) {
 	name := fmt.Sprintf("queues__%s", queueName)
 	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
 	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1 returning *;`
@@ -155,7 +147,7 @@ func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (er
 			return row.Err()
 		}
 
-		var msg LiteMessage
+		var msg queue.LiteMessage
 		if rowScanErr := row.StructScan(&msg); rowScanErr != nil {
 			return rowScanErr
 		}
