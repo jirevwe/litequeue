@@ -7,6 +7,47 @@ import (
 )
 import "github.com/stretchr/testify/require"
 
+type TestTask struct {
+	executeFunc    func() error
+	wg             *sync.WaitGroup
+	mFailure       *sync.Mutex
+	failureHandled bool
+}
+
+func NewTestTask(executeFunc func() error, wg *sync.WaitGroup) *TestTask {
+	return &TestTask{
+		executeFunc: executeFunc,
+		wg:          wg,
+		mFailure:    &sync.Mutex{},
+	}
+}
+
+func (t *TestTask) Execute() error {
+	if t.wg != nil {
+		defer t.wg.Done()
+	}
+
+	if t.executeFunc != nil {
+		return t.executeFunc()
+	}
+
+	return nil
+}
+
+func (t *TestTask) OnFailure(e error) {
+	t.mFailure.Lock()
+	defer t.mFailure.Unlock()
+
+	t.failureHandled = true
+}
+
+func (t *TestTask) hitFailureCase() bool {
+	t.mFailure.Lock()
+	defer t.mFailure.Unlock()
+
+	return t.failureHandled
+}
+
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
 	p := NewWorkerPool(5, 1)
 
