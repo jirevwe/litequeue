@@ -13,7 +13,7 @@ type Queue interface {
 	Write(context.Context, string, []byte) error
 
 	// Consume fetches the first visible item from a Queue
-	Consume(context.Context, string) (*LiteMessage, error)
+	Consume(context.Context, string) (LiteMessage, error)
 
 	// Delete removes a message from a Queue
 	Delete(context.Context, string, string) error

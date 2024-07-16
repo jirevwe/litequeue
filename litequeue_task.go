@@ -1,13 +1,14 @@
 package litequeue
 
 import (
+	"fmt"
+	"github.com/jirevwe/litequeue/packer"
 	"github.com/jirevwe/litequeue/queue"
 	"log"
 )
 
 type Task struct {
-	executeFunc func() error
-	job         *queue.LiteMessage
+	job *queue.LiteMessage
 }
 
 func NewLiteQueueTask(job *queue.LiteMessage) *Task {
@@ -16,14 +17,15 @@ func NewLiteQueueTask(job *queue.LiteMessage) *Task {
 	}
 }
 
-func (l Task) Execute() error {
-	if l.executeFunc != nil {
-		return l.executeFunc()
-	}
-
+func (l *Task) Execute() error {
+	fmt.Printf("%+v\n", fmt.Sprintf("task: id:%s, msg:%s\n", l.job.Id, l.job.Message))
 	return nil
 }
 
-func (l Task) OnFailure(err error) {
+func (l *Task) OnFailure(err error) {
 	log.Printf("%+v\n", err)
+}
+
+func (l *Task) Marshal() ([]byte, error) {
+	return packer.EncodeMessage(l.job)
 }

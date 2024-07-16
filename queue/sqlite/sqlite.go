@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/jirevwe/litequeue/queue"
 	"github.com/jmoiron/sqlx"
@@ -103,7 +105,7 @@ type id struct {
 }
 
 // Consume fetches the first visible item from a queue
-func (s *Sqlite) Consume(ctx context.Context, queueName string) (message *queue.LiteMessage, err error) {
+func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.LiteMessage, err error) {
 	name := fmt.Sprintf("queues__%s", queueName)
 	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
 	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1 returning *;`
@@ -112,6 +114,10 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message *queue.
 		// read one message from the queue
 		row := tx.QueryRowxContext(ctx, getFirstItem)
 		if row.Err() != nil {
+			if errors.Is(row.Err(), sql.ErrNoRows) {
+				return nil
+			}
+
 			return row.Err()
 		}
 
@@ -122,6 +128,10 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message *queue.
 
 		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id)
 		if row.Err() != nil {
+			if errors.Is(row.Err(), sql.ErrNoRows) {
+				return nil
+			}
+
 			return row.Err()
 		}
 

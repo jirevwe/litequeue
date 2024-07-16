@@ -5,11 +5,13 @@ import (
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
 	"github.com/jirevwe/litequeue/queue/sqlite"
+	"github.com/oklog/ulid/v2"
 	"log"
+	"time"
 )
 
 func Main() {
-	testQueueName := "test_queue"
+	testQueueName := "local_queue"
 
 	sqliteQueue, err := sqlite.NewSqlite(testQueueName)
 	if err != nil {
@@ -23,41 +25,56 @@ func Main() {
 		queueName:  testQueueName,
 	}
 
+	t := NewLiteQueueTask(&queue.LiteMessage{
+		Id:        ulid.Make().String(),
+		Message:   "hello world!",
+		VisibleAt: time.Now().Add(30 * time.Second).String(),
+	})
+
+	err = lite.Write(context.Background(), testQueueName, t)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	lite.Start()
 }
 
-// LiteQueue is the shell for the application
-type LiteQueue struct {
-	workerPool pool.Pool
-	queue      queue.Queue
-	ctx        context.Context
-	queueName  string
-}
-
 func (q *LiteQueue) Start() {
-	go q.workerPool.Start()
+	q.workerPool.Start()
 
-	// we need to pool the db for new jobs
+	// we need to poll the db for new jobs
 	for {
 		// todo: poll from all queues
-		job, err := q.queue.Consume(q.ctx, q.queueName)
+		liteMessage, err := q.queue.Consume(q.ctx, q.queueName)
 		if err != nil {
-			log.Printf("%+v\n", err)
+			// todo: configure library structured logger
+			log.Printf("Consume :%+v\n", err)
 		}
 
-		if job != nil {
+		if &liteMessage == nil {
+			// nothing to work on, sleep then try again
+			time.Sleep(time.Second)
 			continue
 		}
 
-		log.Printf("%+v\n", job)
-		err = q.workerPool.AddWork(NewLiteQueueTask(job))
+		log.Printf("liteMessage: %+v\n", liteMessage)
+
+		job := NewLiteQueueTask(&liteMessage)
+		err = q.workerPool.AddWork(job)
 		if err != nil {
 			log.Printf("%+v\n", err)
 		}
+
+		time.Sleep(time.Second)
 	}
 }
 
-func (q *LiteQueue) Write(ctx context.Context, payload []byte) error {
-	// todo: the "queue" should be passed to LiteQueue.Write()
-	return q.queue.Write(ctx, q.queueName, payload)
+// todo: write to accept a lite-task interface
+func (q *LiteQueue) Write(ctx context.Context, queueName string, task *Task) error {
+	raw, err := task.Marshal()
+	if err != nil {
+		return err
+	}
+
+	return q.queue.Write(ctx, queueName, raw)
 }
