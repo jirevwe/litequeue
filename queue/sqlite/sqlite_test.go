@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"github.com/stretchr/testify/require"
+	"log/slog"
+	"os"
 	"sync"
 	"testing"
 	"time"
 )
 
+var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+
 func TestSqlite_WriteOne(t *testing.T) {
 	queueName := "test_queue"
-	s, err := NewSqlite(queueName)
+	s, err := NewSqlite(queueName, slogger)
 	require.NoError(t, err)
 
 	err = s.Write(context.Background(), queueName, []byte("hello world"))
@@ -20,7 +24,7 @@ func TestSqlite_WriteOne(t *testing.T) {
 
 func TestSqlite_WriteConcurrently(t *testing.T) {
 	queueName := "test_queue"
-	s, err := NewSqlite(queueName)
+	s, err := NewSqlite(queueName, slogger)
 	require.NoError(t, err)
 	wg := &sync.WaitGroup{}
 	ctx := context.Background()
@@ -37,7 +41,7 @@ func TestSqlite_WriteConcurrently(t *testing.T) {
 
 func TestSqlite_Consume(t *testing.T) {
 	queueName := "test_queue"
-	s, err := NewSqlite(queueName)
+	s, err := NewSqlite(queueName, slogger)
 	require.NoError(t, err)
 	ctx := context.Background()
 	message := []byte("hello world")
@@ -59,7 +63,7 @@ func TestSqlite_Consume(t *testing.T) {
 
 func TestSqlite_Truncate(t *testing.T) {
 	queueName := "test_queue"
-	s, err := NewSqlite(queueName)
+	s, err := NewSqlite(queueName, slogger)
 	require.NoError(t, err)
 	ctx := context.Background()
 	message := []byte("hello world")

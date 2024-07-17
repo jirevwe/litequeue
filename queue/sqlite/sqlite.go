@@ -9,7 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/ulid/v2"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -19,67 +19,74 @@ const (
 )
 
 type Sqlite struct {
-	logger *log.Logger
+	logger *slog.Logger
 	db     *sqlx.DB
 }
 
-func NewSqlite(queueName string) (*Sqlite, error) {
-	// connect to the db
-	db, err := sqlx.Open("sqlite3", "litequeue.db?_journal_mode=WAL&_foreign_keys=off&_auto_vacuum=full")
+func NewSqlite(dbPath string, logger *slog.Logger) (*Sqlite, error) {
+	db, err := sqlx.Open("sqlite3", fmt.Sprintf("%s?_journal_mode=WAL&_foreign_keys=off&_auto_vacuum=full", dbPath))
 	if err != nil {
 		return nil, err
 	}
 
-	ctx := context.Background()
-
-	// create the required tables
-	tx, err := db.BeginTxx(ctx, nil)
+	err = db.Ping()
 	if err != nil {
 		return nil, err
 	}
 
-	createQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + ` (
-		id TEXT PRIMARY KEY,
-		message BLOB,
-		visible_at TEXT not null,
-		status text not null default 'scheduled',
-		created_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ')),
-		updated_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
-	) strict;`
+	return &Sqlite{db: db, logger: logger}, nil
+}
 
-	createArchivedQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + `_archived (
-		id TEXT PRIMARY KEY,
-		message BLOB,
-		status text not null,
-		created_at TEXT not null,
-		updated_at TEXT not null,
-		archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
-	) strict;`
+func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) error {
+	return s.inTx(ctx, func(tx *sqlx.Tx) error {
+		createQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + ` (
+			id TEXT PRIMARY KEY,
+			message BLOB,
+			visible_at TEXT not null,
+			status text not null default 'scheduled',
+			created_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ')),
+			updated_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
+		) strict;`
 
-	_, err = tx.ExecContext(ctx, createQueueQuery)
-	if err != nil {
-		return nil, err
-	}
+		createArchivedQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + `_archived (
+			id TEXT PRIMARY KEY,
+			message BLOB,
+			status text not null,
+			created_at TEXT not null,
+			updated_at TEXT not null,
+			archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
+		) strict;`
 
-	_, err = tx.ExecContext(ctx, createArchivedQueueQuery)
-	if err != nil {
-		return nil, err
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		err := rollback(tx, err)
+		_, err := tx.ExecContext(ctx, createQueueQuery)
 		if err != nil {
-			return nil, err
+			return err
 		}
-	}
 
-	// run any required migrations
+		_, err = tx.ExecContext(ctx, createArchivedQueueQuery)
+		if err != nil {
+			return err
+		}
 
-	// build the struct
-	return &Sqlite{
-		db: db,
-	}, nil
+		return nil
+	})
+}
+
+func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) error {
+	return s.inTx(ctx, func(tx *sqlx.Tx) error {
+		deleteQueueQuery := `DELETE TABLE queues__` + queueName
+		_, err := tx.ExecContext(ctx, deleteQueueQuery)
+		if err != nil {
+			return err
+		}
+
+		deleteArchivedQueueQuery := `DELETE TABLE queues__` + queueName + `_archived`
+		_, err = tx.ExecContext(ctx, deleteArchivedQueueQuery)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 // Write puts an item on a queue
