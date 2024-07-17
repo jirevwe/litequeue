@@ -2,41 +2,19 @@ package litequeue
 
 import (
 	"context"
+	"fmt"
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
-	"github.com/jirevwe/litequeue/queue/sqlite"
-	"github.com/oklog/ulid/v2"
-	"log"
+	"log/slog"
 	"time"
 )
 
-func Main() {
-	testQueueName := "local_queue"
-
-	sqliteQueue, err := sqlite.NewSqlite(testQueueName)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	lite := LiteQueue{
-		workerPool: pool.NewWorkerPool(10, 10),
-		ctx:        context.Background(),
-		queue:      sqliteQueue,
-		queueName:  testQueueName,
-	}
-
-	t := NewLiteQueueTask(&queue.LiteMessage{
-		Id:        ulid.Make().String(),
-		Message:   "hello world!",
-		VisibleAt: time.Now().Add(30 * time.Second).String(),
-	})
-
-	err = lite.Write(context.Background(), testQueueName, t)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	lite.Start()
+// LiteQueue is the shell for the application
+type LiteQueue struct {
+	workerPool pool.Pool
+	queue      queue.Queue
+	ctx        context.Context
+	logger     *slog.Logger
 }
 
 func (q *LiteQueue) Start() {
@@ -44,11 +22,10 @@ func (q *LiteQueue) Start() {
 
 	// we need to poll the db for new jobs
 	for {
-		// todo: poll from all queues
-		liteMessage, err := q.queue.Consume(q.ctx, q.queueName)
+		// todo: poll from all queues it is hardcoded atm
+		liteMessage, err := q.queue.Consume(q.ctx, "local_queue")
 		if err != nil {
-			// todo: configure library structured logger
-			log.Printf("Consume :%+v\n", err)
+			q.logger.Error(err.Error(), "func", "queue.Consume")
 		}
 
 		if &liteMessage == nil {
@@ -57,12 +34,12 @@ func (q *LiteQueue) Start() {
 			continue
 		}
 
-		log.Printf("liteMessage: %+v\n", liteMessage)
+		q.logger.Info(fmt.Sprintf("liteMessage: %+v", liteMessage))
 
 		job := NewLiteQueueTask(&liteMessage)
 		err = q.workerPool.AddWork(job)
 		if err != nil {
-			log.Printf("%+v\n", err)
+			q.logger.Error(err.Error(), "func", "workerPool.AddWork")
 		}
 
 		time.Sleep(time.Second)
