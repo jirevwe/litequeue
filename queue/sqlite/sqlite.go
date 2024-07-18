@@ -117,14 +117,17 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
 	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1 returning *;`
 
+	defer func() {
+		if errors.Is(err, sql.ErrNoRows) {
+			// we don't care about "sql: no rows in result set" errors
+			err = nil
+		}
+	}()
+
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// read one message from the queue
 		row := tx.QueryRowxContext(ctx, getFirstItem)
 		if row.Err() != nil {
-			if errors.Is(row.Err(), sql.ErrNoRows) {
-				return nil
-			}
-
 			return row.Err()
 		}
 
@@ -135,10 +138,6 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 
 		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id)
 		if row.Err() != nil {
-			if errors.Is(row.Err(), sql.ErrNoRows) {
-				return nil
-			}
-
 			return row.Err()
 		}
 

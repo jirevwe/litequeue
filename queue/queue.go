@@ -1,6 +1,9 @@
 package queue
 
-import "context"
+import (
+	"context"
+	"github.com/jirevwe/litequeue/packer"
+)
 
 //{SCHEMA}.{TABLE_PREFIX}__{TABLE_NAME}  -- will hold non-terminal messages for the Queue
 //{SCHEMA}.{TABLE_PREFIX}__{TABLE_NAME}_archived -- will hold archived messages for the Queue
@@ -26,4 +29,8 @@ type LiteMessage struct {
 	VisibleAt string `json:"visible_at" db:"visible_at"`
 	CreatedAt string `json:"created_at" db:"created_at"`
 	UpdatedAt string `json:"updated_at" db:"updated_at"`
+}
+
+func (l *LiteMessage) Marshal() ([]byte, error) {
+	return packer.EncodeMessage(l)
 }

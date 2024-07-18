@@ -2,9 +2,9 @@ package litequeue
 
 import (
 	"context"
-	"fmt"
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
+	"github.com/oklog/ulid/v2"
 	"log/slog"
 	"time"
 )
@@ -34,9 +34,9 @@ func (q *LiteQueue) Start() {
 			continue
 		}
 
-		q.logger.Info(fmt.Sprintf("liteMessage: %+v", liteMessage))
+		//q.logger.Info(fmt.Sprintf("liteMessage: %+v", liteMessage))
 
-		job := NewLiteQueueTask(&liteMessage)
+		job := NewLiteQueueTask([]byte(liteMessage.Message), q.logger)
 		err = q.workerPool.AddWork(job)
 		if err != nil {
 			q.logger.Error(err.Error(), "func", "workerPool.AddWork")
@@ -48,7 +48,13 @@ func (q *LiteQueue) Start() {
 
 // todo: write to accept a lite-task interface
 func (q *LiteQueue) Write(ctx context.Context, queueName string, task *Task) error {
-	raw, err := task.Marshal()
+	job := &queue.LiteMessage{
+		Id:        ulid.Make().String(),
+		Message:   string(task.Message),
+		VisibleAt: time.Now().Add(30 * time.Second).String(),
+	}
+
+	raw, err := job.Marshal()
 	if err != nil {
 		return err
 	}

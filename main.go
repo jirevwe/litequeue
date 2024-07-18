@@ -3,14 +3,11 @@ package litequeue
 import (
 	"context"
 	"github.com/jirevwe/litequeue/pool"
-	"github.com/jirevwe/litequeue/queue"
 	"github.com/jirevwe/litequeue/queue/sqlite"
-	"github.com/oklog/ulid/v2"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 func Main() {
@@ -42,12 +39,7 @@ func Main() {
 		logger:     slogger,
 	}
 
-	t := NewLiteQueueTask(&queue.LiteMessage{
-		Id:        ulid.Make().String(),
-		Message:   "hello world!",
-		VisibleAt: time.Now().Add(30 * time.Second).String(),
-	})
-
+	t := NewLiteQueueTask([]byte("hello world!"), slogger)
 	err = lite.Write(ctx, testQueueName, t)
 	if err != nil {
 		log.Fatalln(err)
@@ -55,4 +47,8 @@ func Main() {
 
 	// start blocks
 	lite.Start()
+}
+
+func jobAdder(ctx context.Context) {
+
 }
