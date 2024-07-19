@@ -4,7 +4,9 @@ import (
 	"context"
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
+	"github.com/jirevwe/litequeue/queue/sqlite"
 	"github.com/oklog/ulid/v2"
+	"log"
 	"log/slog"
 	"time"
 )
@@ -15,6 +17,28 @@ type LiteQueue struct {
 	queue      queue.Queue
 	ctx        context.Context
 	logger     *slog.Logger
+	notifyChan chan pool.Task
+}
+
+func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) *LiteQueue {
+	s, err := sqlite.NewSqlite(dbPath, logger)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	notifyChan := make(chan pool.Task)
+	wp := pool.NewWorkerPool(10, 10, logger, notifyChan)
+
+	return &LiteQueue{
+		queue:      s,
+		ctx:        ctx,
+		logger:     logger,
+		notifyChan: notifyChan,
+		workerPool: wp,
+	}
+}
+
+func (q *LiteQueue) CreateQueue(ctx context.Context, queueName string) error {
+	return q.queue.CreateQueue(ctx, queueName)
 }
 
 func (q *LiteQueue) Start() {

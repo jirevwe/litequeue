@@ -20,6 +20,10 @@ type Queue interface {
 
 	// Delete removes a message from a Queue
 	Delete(context.Context, string, string) error
+
+	CreateQueue(context.Context, string) error
+
+	DeleteQueue(context.Context, string) error
 }
 
 type LiteMessage struct {
