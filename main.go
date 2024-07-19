@@ -18,17 +18,28 @@ func Main() {
 	}
 
 	dbPath := filepath.Join(dir, "litequeue.db")
-	lite := NewLiteQueue(ctx, dbPath, slogger)
+	lite, err := NewLiteQueue(ctx, dbPath, slogger)
+	if err != nil {
+		slogger.Error(err.Error())
+		return
+	}
+
+	if lite == nil {
+		slogger.Error("lite queue instance is nil")
+		return
+	}
 
 	err = lite.CreateQueue(ctx, testQueueName)
 	if err != nil {
 		slogger.Error(err.Error())
+		return
 	}
 
 	t := NewLiteQueueTask([]byte("hello world!"), slogger)
 	err = lite.Write(ctx, testQueueName, t)
 	if err != nil {
 		slogger.Error(err.Error())
+		return
 	}
 
 	// start blocks

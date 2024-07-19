@@ -2,11 +2,11 @@ package litequeue
 
 import (
 	"context"
+	"fmt"
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
 	"github.com/jirevwe/litequeue/queue/sqlite"
 	"github.com/oklog/ulid/v2"
-	"log"
 	"log/slog"
 	"time"
 )
@@ -20,21 +20,24 @@ type LiteQueue struct {
 	notifyChan chan pool.Task
 }
 
-func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) *LiteQueue {
+func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) (*LiteQueue, error) {
 	s, err := sqlite.NewSqlite(dbPath, logger)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
-	notifyChan := make(chan pool.Task)
+
+	notifyChan := make(chan pool.Task, 1000)
 	wp := pool.NewWorkerPool(10, 10, logger, notifyChan)
 
-	return &LiteQueue{
+	q := &LiteQueue{
 		queue:      s,
 		ctx:        ctx,
 		logger:     logger,
 		notifyChan: notifyChan,
 		workerPool: wp,
 	}
+
+	return q, nil
 }
 
 func (q *LiteQueue) CreateQueue(ctx context.Context, queueName string) error {
@@ -46,6 +49,14 @@ func (q *LiteQueue) Start() {
 
 	// we need to poll the db for new jobs
 	for {
+		select {
+		case <-q.ctx.Done():
+			break
+		case task := <-q.notifyChan:
+			q.logger.Info(fmt.Sprintf("%v", task))
+		default:
+		}
+
 		// todo: poll from all queues it is hardcoded atm
 		liteMessage, err := q.queue.Consume(q.ctx, "local_queue")
 		if err != nil {

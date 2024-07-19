@@ -53,15 +53,18 @@ func (w *Worker) Start() {
 				return
 			}
 
+			// notify that the task is "Active"
+			w.notifyChan <- task
+
 			err := task.Execute()
 			if err != nil {
 				task.OnFailure(err)
 			}
 
 			// todo: we write to channel to notify the pool that work was done or failed
-			if err == nil {
 
-			}
+			// notify that the task is "Completed" or "Failed"
+			//w.notifyChan <- task
 
 			continue
 		}
