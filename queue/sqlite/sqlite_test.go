@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -14,20 +15,46 @@ import (
 var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 func TestSqlite_WriteOne(t *testing.T) {
-	queueName := "test_queue"
-	s, err := NewSqlite(queueName, slogger)
+	ctx := context.Background()
+	queueName := "test"
+
+	dir, err := os.Getwd()
+	if err != nil {
+		slogger.Error(err.Error())
+	}
+
+	dbPath := filepath.Join(dir, "../../litequeue.db")
+
+	s, err := NewSqlite(dbPath, slogger)
 	require.NoError(t, err)
 
-	err = s.Write(context.Background(), queueName, []byte("hello world"))
+	err = s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
+
+	err = s.Write(ctx, queueName, []byte("hello world"))
+	require.NoError(t, err)
+
+	require.NoError(t, s.Truncate(ctx, queueName))
 }
 
 func TestSqlite_WriteConcurrently(t *testing.T) {
-	queueName := "test_queue"
-	s, err := NewSqlite(queueName, slogger)
-	require.NoError(t, err)
-	wg := &sync.WaitGroup{}
 	ctx := context.Background()
+	queueName := "test"
+	wg := &sync.WaitGroup{}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		slogger.Error(err.Error())
+	}
+
+	dbPath := filepath.Join(dir, "../../litequeue.db")
+
+	s, err := NewSqlite(dbPath, slogger)
+	require.NoError(t, err)
+
+	err = s.CreateQueue(ctx, queueName)
+	require.NoError(t, err)
+
 	message := []byte("hello world")
 
 	for i := 0; i < 10; i++ {
@@ -40,10 +67,22 @@ func TestSqlite_WriteConcurrently(t *testing.T) {
 }
 
 func TestSqlite_Consume(t *testing.T) {
-	queueName := "test_queue"
-	s, err := NewSqlite(queueName, slogger)
-	require.NoError(t, err)
 	ctx := context.Background()
+	queueName := "test"
+
+	dir, err := os.Getwd()
+	if err != nil {
+		slogger.Error(err.Error())
+	}
+
+	dbPath := filepath.Join(dir, "../../litequeue.db")
+
+	s, err := NewSqlite(dbPath, slogger)
+	require.NoError(t, err)
+
+	err = s.CreateQueue(ctx, queueName)
+	require.NoError(t, err)
+
 	message := []byte("hello world")
 
 	for i := 0; i < 2; i++ {
@@ -62,10 +101,22 @@ func TestSqlite_Consume(t *testing.T) {
 }
 
 func TestSqlite_Truncate(t *testing.T) {
-	queueName := "test_queue"
-	s, err := NewSqlite(queueName, slogger)
-	require.NoError(t, err)
 	ctx := context.Background()
+	queueName := "test"
+
+	dir, err := os.Getwd()
+	if err != nil {
+		slogger.Error(err.Error())
+	}
+
+	dbPath := filepath.Join(dir, "../../litequeue.db")
+
+	s, err := NewSqlite(dbPath, slogger)
+	require.NoError(t, err)
+
+	err = s.CreateQueue(ctx, queueName)
+	require.NoError(t, err)
+
 	message := []byte("hello world")
 
 	for i := 0; i < 2; i++ {
