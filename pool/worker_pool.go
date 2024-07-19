@@ -3,7 +3,7 @@ package pool
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -25,18 +25,23 @@ type WorkerPool struct {
 	workers []*Worker
 
 	wg *sync.WaitGroup
+
+	log *slog.Logger
+
+	// channel used to signal up a layer about work status
+	notifyChan chan Task
 }
 
 func (p *WorkerPool) Start() {
 	p.start.Do(func() {
-		log.Println("starting worker pool")
+		p.log.Info("starting worker pool")
 		p.startWorkers()
 	})
 }
 
 func (p *WorkerPool) startWorkers() {
 	for i := 0; i < len(p.workers); i++ {
-		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.wg)
+		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.notifyChan, p.wg, p.log)
 		p.workers[i] = w
 		p.wg.Add(1)
 		go w.Start()
@@ -48,7 +53,7 @@ func (p *WorkerPool) AddWorkNonBlocking(t Task) {
 	go func() {
 		err := p.AddWork(t)
 		if err != nil {
-			log.Println(err)
+			p.log.Error(err.Error())
 		}
 	}()
 }
@@ -59,7 +64,7 @@ func (p *WorkerPool) Stop() error {
 		// a) should all the queued tasks be processed before returning?
 		// b) should Stop() block until all tasks are done and the workers return?
 
-		log.Printf("stopping worker pool")
+		p.log.Info("stopping worker pool")
 
 		// tell each worker to stop processing tasks
 		close(p.globalQuit)
@@ -70,7 +75,7 @@ func (p *WorkerPool) Stop() error {
 		// wait for all of them to clean themselves up
 		p.wg.Wait()
 
-		log.Printf("worker pool has been stopped\n")
+		p.log.Info("worker pool has been stopped\n")
 	})
 	return nil
 }
@@ -88,7 +93,7 @@ func (p *WorkerPool) AddWork(t Task) error {
 	return nil
 }
 
-func NewWorkerPool(numWorkers, size uint) Pool {
+func NewWorkerPool(numWorkers, size uint, log *slog.Logger, notifyChan chan Task) Pool {
 	// size of the internal queue
 	tasks := make(chan Task, size)
 
@@ -100,5 +105,7 @@ func NewWorkerPool(numWorkers, size uint) Pool {
 		stop:       sync.Once{},
 		globalQuit: make(chan bool, 1),
 		wg:         &sync.WaitGroup{},
+		notifyChan: notifyChan,
+		log:        log,
 	}
 }
