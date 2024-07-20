@@ -54,7 +54,7 @@ func (w *Worker) Start() {
 			}
 
 			// notify that the task is "Active"
-			w.notifyChan <- task
+			//w.notifyChan <- task
 
 			err := task.Execute()
 			if err != nil {

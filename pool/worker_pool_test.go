@@ -1,6 +1,8 @@
 package pool
 
 import (
+	"log/slog"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -48,8 +50,11 @@ func (t *TestTask) hitFailureCase() bool {
 	return t.failureHandled
 }
 
+var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var notifyChan = make(chan Task, 1)
+
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
-	p := NewWorkerPool(5, 1)
+	p := NewWorkerPool(5, 1, slogger, notifyChan)
 
 	// We're just checking to make sure multiple
 	// calls to start or stop don't cause a panic
@@ -72,12 +77,14 @@ func NewCounterTest() *counterTest {
 	}
 }
 
-func (c *counterTest) Inc() error {
-	c.mu.Lock()
-	c.count++
-	println(c.count)
-	c.mu.Unlock()
-	return nil
+func (c *counterTest) Inc(t *testing.T) func() error {
+	return func() error {
+		c.mu.Lock()
+		c.count++
+		t.Log(c.count)
+		c.mu.Unlock()
+		return nil
+	}
 }
 
 func TestWorkerPool_Work(t *testing.T) {
@@ -87,10 +94,10 @@ func TestWorkerPool_Work(t *testing.T) {
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		tasks = append(tasks, NewTestTask(c.Inc, wg))
+		tasks = append(tasks, NewTestTask(c.Inc(t), wg))
 	}
 
-	p := NewWorkerPool(5, uint(len(tasks)))
+	p := NewWorkerPool(5, uint(len(tasks)), slogger, notifyChan)
 	p.Start()
 
 	for _, j := range tasks {
@@ -108,14 +115,14 @@ func TestWorkerPool_Work(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
-	p := NewWorkerPool(4, 10)
+	p := NewWorkerPool(4, 10, slogger, notifyChan)
 	p.Start()
 	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc(t), wg)))
 	}
 
 	done := make(chan struct{})
@@ -142,13 +149,13 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 }
 
 func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
-	p := NewWorkerPool(10, 10)
+	p := NewWorkerPool(10, 10, slogger, notifyChan)
 	p.Start()
 	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 60; i++ {
-		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc(t), wg)))
 		wg.Add(1)
 	}
 
@@ -167,11 +174,6 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 		require.NoError(t, p.Stop())
 	}()
 
-	// Concurrently, add more tasks after Stop() is called
-	//for i := 0; i < 3; i++ {
-	//	go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
-	//}
-
 	// wait until either we hit our timeout, or we're told the AddWork calls completed
 	select {
 	case <-time.After(10 * time.Second):
@@ -183,14 +185,14 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop_2(t *testing.T) {
-	p := NewWorkerPool(4, 10)
+	p := NewWorkerPool(4, 10, slogger, notifyChan)
 	p.Start()
 	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
-		go require.NoError(t, p.AddWork(NewTestTask(c.Inc, wg)))
+		go require.NoError(t, p.AddWork(NewTestTask(c.Inc(t), wg)))
 	}
 
 	// Sleep for a short time to ensure workers have started processing tasks
@@ -199,7 +201,7 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop_2(t *testing.T) {
 	// Stop the worker pool
 	go require.NoError(t, p.Stop())
 
-	require.Error(t, ErrWorkerPoolClosed, p.AddWork(NewTestTask(c.Inc, wg)))
+	require.Error(t, ErrWorkerPoolClosed, p.AddWork(NewTestTask(c.Inc(t), wg)))
 
 	// Sleep for a short time to ensure workers have started processing tasks
 	time.Sleep(1 * time.Second)
