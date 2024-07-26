@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jirevwe/litequeue/queue"
+	"github.com/jirevwe/litequeue/util"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/ulid/v2"
@@ -167,7 +168,7 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 // Write puts an item on a queue
 func (s *Sqlite) Write(ctx context.Context, queueId string, message []byte) error {
 	// todo: expose delay as a configurable value
-	now := time.Now().Add(time.Second)
+	now := util.NewRealClock().Now().Add(time.Second)
 	nowFormatted := now.Format(queue.Rfc3339Milli)
 
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
@@ -224,8 +225,8 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 	return message, err
 }
 
-// Delete removes a message from a queue
-func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (err error) {
+// DeleteMessage removes a message from a queue
+func (s *Sqlite) DeleteMessage(ctx context.Context, queueName string, msgId string) (err error) {
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
 		deleteQuery := `delete from messages where id = $1 and queue_id = $2 returning *`
 		row := tx.QueryRowxContext(ctx, deleteQuery, msgId, queueName)

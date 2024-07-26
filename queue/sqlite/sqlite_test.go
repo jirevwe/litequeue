@@ -146,9 +146,13 @@ func TestSqlite_TruncateQueue(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		deleteErr := s.Delete(ctx, queueName, msgIds[i])
+		deleteErr := s.DeleteMessage(ctx, queueName, msgIds[i])
 		require.NoError(t, deleteErr)
 	}
+
+	msgs, err := s.GetArchivedMessages(ctx, queueName)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
 }
 
 func writeOne(t *testing.T, ctx context.Context, ss *Sqlite, qName string, message []byte, w *sync.WaitGroup) {

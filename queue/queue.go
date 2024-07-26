@@ -19,7 +19,7 @@ type Queue interface {
 	Consume(context.Context, string) (LiteMessage, error)
 
 	// Delete removes a message from a Queue
-	Delete(context.Context, string, string) error
+	DeleteMessage(context.Context, string, string) error
 
 	CreateQueue(context.Context, string) error
 
