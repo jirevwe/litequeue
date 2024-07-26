@@ -6,6 +6,7 @@ import (
 	"github.com/jirevwe/litequeue/pool"
 	"github.com/jirevwe/litequeue/queue"
 	"github.com/jirevwe/litequeue/queue/sqlite"
+	"github.com/jirevwe/litequeue/util"
 	"github.com/oklog/ulid/v2"
 	"log/slog"
 	"sync"
@@ -115,7 +116,7 @@ func (q *LiteQueue) Write(ctx context.Context, queueName string, task *pool.Task
 	job := &queue.LiteMessage{
 		Id:        ulid.Make().String(),
 		Message:   string(task.Payload()),
-		VisibleAt: time.Now().Add(30 * time.Second).String(),
+		VisibleAt: util.NewRealClock().Now().Add(30 * time.Second).String(),
 	}
 
 	raw, err := job.Marshal()
