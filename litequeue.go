@@ -8,6 +8,7 @@ import (
 	"github.com/jirevwe/litequeue/queue/sqlite"
 	"github.com/oklog/ulid/v2"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -17,7 +18,21 @@ type LiteQueue struct {
 	queue      queue.Queue
 	ctx        context.Context
 	logger     *slog.Logger
-	notifyChan chan pool.Task
+	notifyChan chan *pool.Task
+	mux        Mux
+}
+
+type HandlerFunc func(*pool.Task) error
+
+type Mux struct {
+	queueList map[string]HandlerFunc
+	mu        *sync.Mutex
+}
+
+func (m *Mux) add(name string, h HandlerFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.queueList[name] = h
 }
 
 func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) (*LiteQueue, error) {
@@ -26,8 +41,9 @@ func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) (*Lit
 		return nil, err
 	}
 
-	notifyChan := make(chan pool.Task, 1000)
+	notifyChan := make(chan *pool.Task, 10)
 	wp := pool.NewWorkerPool(10, 10, logger, notifyChan)
+	mux := Mux{queueList: make(map[string]HandlerFunc), mu: &sync.Mutex{}}
 
 	q := &LiteQueue{
 		queue:      s,
@@ -35,16 +51,28 @@ func NewLiteQueue(ctx context.Context, dbPath string, logger *slog.Logger) (*Lit
 		logger:     logger,
 		notifyChan: notifyChan,
 		workerPool: wp,
+		mux:        mux,
 	}
 
 	return q, nil
 }
 
-func (q *LiteQueue) CreateQueue(ctx context.Context, queueName string) error {
-	return q.queue.CreateQueue(ctx, queueName)
+func (q *LiteQueue) CreateQueue(ctx context.Context, queueName string, executeFunc HandlerFunc) error {
+	// try to create the queue, if it succeeds, add it to the list of queues
+	if err := q.queue.CreateQueue(ctx, queueName); err != nil {
+		return err
+	}
+
+	// todo: figure our how to properly register handlers for queues when creating them
+	q.mux.add(queueName, executeFunc)
+
+	return nil
 }
 
 func (q *LiteQueue) Start() {
+	// todo: poll from all queues it is hardcoded atm
+	queueName := "local_queue"
+
 	q.workerPool.Start()
 
 	// we need to poll the db for new jobs
@@ -57,8 +85,7 @@ func (q *LiteQueue) Start() {
 		default:
 		}
 
-		// todo: poll from all queues it is hardcoded atm
-		liteMessage, err := q.queue.Consume(q.ctx, "local_queue")
+		liteMessage, err := q.queue.Consume(q.ctx, queueName)
 		if err != nil {
 			q.logger.Error(err.Error(), "func", "queue.Consume")
 		}
@@ -69,10 +96,13 @@ func (q *LiteQueue) Start() {
 			continue
 		}
 
-		//q.logger.Info(fmt.Sprintf("liteMessage: %+v", liteMessage))
+		task := pool.NewTask([]byte(liteMessage.Message), q.logger)
+		task.Execute = q.mux.queueList[queueName]
+		task.OnError = func(err error) {
+			q.logger.Error(err.Error(), "func", "queue.OnError")
+		}
 
-		job := NewLiteQueueTask([]byte(liteMessage.Message), q.logger)
-		err = q.workerPool.AddWork(job)
+		err = q.workerPool.AddWork(task)
 		if err != nil {
 			q.logger.Error(err.Error(), "func", "workerPool.AddWork")
 		}
@@ -81,11 +111,10 @@ func (q *LiteQueue) Start() {
 	}
 }
 
-// todo: write to accept a lite-task interface
-func (q *LiteQueue) Write(ctx context.Context, queueName string, task *Task) error {
+func (q *LiteQueue) Write(ctx context.Context, queueName string, task *pool.Task) error {
 	job := &queue.LiteMessage{
 		Id:        ulid.Make().String(),
-		Message:   string(task.Message),
+		Message:   string(task.Payload()),
 		VisibleAt: time.Now().Add(30 * time.Second).String(),
 	}
 

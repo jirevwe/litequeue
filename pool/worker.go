@@ -11,7 +11,7 @@ type Worker struct {
 	id string
 
 	// channel from which the worker consumes work
-	tasks chan Task
+	tasks chan *Task
 
 	// channel to signal the worker to stop working
 	quit chan bool
@@ -21,11 +21,12 @@ type Worker struct {
 
 	log *slog.Logger
 
+	// todo: create starting and finished channels to signal work status
 	// channel used to signal up a layer about work status
-	notifyChan chan Task
+	notifyChan chan *Task
 }
 
-func NewWorker(id string, tasks chan Task, quit chan bool, notifyChan chan Task, wg *sync.WaitGroup, log *slog.Logger) *Worker {
+func NewWorker(id string, tasks chan *Task, quit chan bool, notifyChan chan *Task, wg *sync.WaitGroup, log *slog.Logger) *Worker {
 	return &Worker{
 		id:         id,
 		wg:         wg,
@@ -45,6 +46,7 @@ func (w *Worker) Start() {
 	}()
 
 	for {
+
 		// if there are tasks, process one
 		if len(w.tasks) > 0 {
 			task, ok := <-w.tasks
@@ -52,13 +54,14 @@ func (w *Worker) Start() {
 				w.log.Info(fmt.Sprintf("stopping worker %s with closed tasks channel", w.id))
 				return
 			}
+			// todo: check if the task's context is done
 
 			// notify that the task is "Active"
 			//w.notifyChan <- task
 
-			err := task.Execute()
+			err := task.Execute(task)
 			if err != nil {
-				task.OnFailure(err)
+				task.OnError(err)
 			}
 
 			// todo: we write to channel to notify the pool that work was done or failed

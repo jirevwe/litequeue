@@ -11,7 +11,7 @@ var ErrWorkerPoolClosed = errors.New("worker pool is not active")
 
 type WorkerPool struct {
 	// channel from which workers consume work
-	tasks chan Task
+	tasks chan *Task
 
 	// ensure the pool can only be started once
 	start sync.Once
@@ -29,7 +29,7 @@ type WorkerPool struct {
 	log *slog.Logger
 
 	// channel used to signal up a layer about work status
-	notifyChan chan Task
+	notifyChan chan *Task
 }
 
 func (p *WorkerPool) Start() {
@@ -49,7 +49,7 @@ func (p *WorkerPool) startWorkers() {
 }
 
 // AddWorkNonBlocking adds work to the WorkerPool and returns immediately
-func (p *WorkerPool) AddWorkNonBlocking(t Task) {
+func (p *WorkerPool) AddWorkNonBlocking(t *Task) {
 	go func() {
 		err := p.AddWork(t)
 		if err != nil {
@@ -82,7 +82,7 @@ func (p *WorkerPool) Stop() error {
 
 // AddWork adds work to the WorkerPool. If the channel buffer is full (or 0) and
 // all workers are occupied, this will block until work is consumed or Stop() is called.
-func (p *WorkerPool) AddWork(t Task) error {
+func (p *WorkerPool) AddWork(t *Task) error {
 	select {
 	case <-p.globalQuit:
 		return ErrWorkerPoolClosed
@@ -93,9 +93,9 @@ func (p *WorkerPool) AddWork(t Task) error {
 	return nil
 }
 
-func NewWorkerPool(numWorkers, size uint, log *slog.Logger, notifyChan chan Task) Pool {
+func NewWorkerPool(numWorkers, size uint, log *slog.Logger, notifyChan chan *Task) Pool {
 	// size of the internal queue
-	tasks := make(chan Task, size)
+	tasks := make(chan *Task, size)
 
 	return &WorkerPool{
 		// number of workers in the pool

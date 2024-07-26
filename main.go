@@ -2,7 +2,12 @@ package litequeue
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/jirevwe/litequeue/pool"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -29,13 +34,37 @@ func Main() {
 		return
 	}
 
-	err = lite.CreateQueue(ctx, testQueueName)
+	err = lite.CreateQueue(ctx, testQueueName, func(task *pool.Task) error {
+		// todo: when we run Execute() we need to update the job status in the db
+		slogger.Info(fmt.Sprintf("task: %s", string(task.Payload())))
+		c := http.Client{}
+		resp, err := c.Get("https://httpbin.org/post?one=two")
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != 200 {
+			return errors.New(resp.Status)
+		}
+
+		// read response body
+		respStr, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		// print response body
+		slogger.Info(string(respStr))
+
+		return nil
+	})
 	if err != nil {
 		slogger.Error(err.Error())
 		return
 	}
 
-	t := NewLiteQueueTask([]byte("hello world!"), slogger)
+	t := pool.NewTask([]byte("hello world!"), slogger)
 	err = lite.Write(ctx, testQueueName, t)
 	if err != nil {
 		slogger.Error(err.Error())
