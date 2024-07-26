@@ -14,9 +14,9 @@ import (
 
 var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-func TestSqlite_WriteOne(t *testing.T) {
+func setupTest(t *testing.T) (context.Context, string, *Sqlite) {
 	ctx := context.Background()
-	queueName := "test"
+	queueName := fmt.Sprintf("test-%v", time.Now().UnixNano())
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -28,31 +28,67 @@ func TestSqlite_WriteOne(t *testing.T) {
 	s, err := NewSqlite(dbPath, slogger)
 	require.NoError(t, err)
 
-	err = s.CreateQueue(ctx, queueName)
+	return ctx, queueName, s
+}
+
+func teardownTest(t *testing.T, ctx context.Context, queueName string, s *Sqlite) {
+	require.NoError(t, s.TruncateQueue(ctx, queueName))
+}
+
+func TestSqlite_DeleteQueue_EmptyQueue(t *testing.T) {
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
+
+	err := s.CreateQueue(ctx, queueName)
+	require.NoError(t, err)
+
+	require.NoError(t, s.DeleteQueue(ctx, queueName))
+
+	msgs, err := s.GetArchivedMessages(ctx, queueName)
+	require.NoError(t, err)
+	require.Empty(t, msgs)
+}
+
+func TestSqlite_DeleteQueue_NonEmptyQueue(t *testing.T) {
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
+
+	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
 	err = s.Write(ctx, queueName, []byte("hello world"))
 	require.NoError(t, err)
 
-	require.NoError(t, s.Truncate(ctx, queueName))
+	require.NoError(t, s.DeleteQueue(ctx, queueName))
+
+	msgs, err := s.GetArchivedMessages(ctx, queueName)
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+
+	// fetch the archived queue
+	q, err := s.GetArchivedQueue(ctx, queueName)
+	require.NoError(t, err)
+	require.Equal(t, q.Name, queueName)
+}
+
+func TestSqlite_WriteOne(t *testing.T) {
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
+
+	err := s.CreateQueue(ctx, queueName)
+	require.NoError(t, err)
+
+	err = s.Write(ctx, queueName, []byte("hello world"))
+	require.NoError(t, err)
 }
 
 func TestSqlite_WriteConcurrently(t *testing.T) {
-	ctx := context.Background()
-	queueName := "test"
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
+
 	wg := &sync.WaitGroup{}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		slogger.Error(err.Error())
-	}
-
-	dbPath := filepath.Join(dir, "../../litequeue.db")
-
-	s, err := NewSqlite(dbPath, slogger)
-	require.NoError(t, err)
-
-	err = s.CreateQueue(ctx, queueName)
+	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
 	message := []byte("hello world")
@@ -62,25 +98,13 @@ func TestSqlite_WriteConcurrently(t *testing.T) {
 		wg.Add(1)
 	}
 	wg.Wait()
-
-	require.NoError(t, s.Truncate(ctx, queueName))
 }
 
 func TestSqlite_Consume(t *testing.T) {
-	ctx := context.Background()
-	queueName := "test"
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
 
-	dir, err := os.Getwd()
-	if err != nil {
-		slogger.Error(err.Error())
-	}
-
-	dbPath := filepath.Join(dir, "../../litequeue.db")
-
-	s, err := NewSqlite(dbPath, slogger)
-	require.NoError(t, err)
-
-	err = s.CreateQueue(ctx, queueName)
+	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
 	message := []byte("hello world")
@@ -96,25 +120,13 @@ func TestSqlite_Consume(t *testing.T) {
 		require.NoError(t, consumeErr)
 		require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
 	}
-
-	require.NoError(t, s.Truncate(ctx, queueName))
 }
 
-func TestSqlite_Truncate(t *testing.T) {
-	ctx := context.Background()
-	queueName := "test"
+func TestSqlite_TruncateQueue(t *testing.T) {
+	ctx, queueName, s := setupTest(t)
+	defer teardownTest(t, ctx, queueName, s)
 
-	dir, err := os.Getwd()
-	if err != nil {
-		slogger.Error(err.Error())
-	}
-
-	dbPath := filepath.Join(dir, "../../litequeue.db")
-
-	s, err := NewSqlite(dbPath, slogger)
-	require.NoError(t, err)
-
-	err = s.CreateQueue(ctx, queueName)
+	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
 	message := []byte("hello world")

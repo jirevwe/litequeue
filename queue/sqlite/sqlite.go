@@ -13,9 +13,43 @@ import (
 	"time"
 )
 
-const (
-	// rfc3339Milli is like time.RFC3339Nano, but with millisecond precision
-	rfc3339Milli = "2006-01-02T15:04:05.000Z07:00"
+var (
+	createQueues = `create table if not exists queues (
+    		id TEXT not null primary key,
+    		name TEXT not null unique,
+    		created_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
+		) strict;`
+
+	createArchivedQueues = `create table if not exists archived_queues (
+    		id TEXT not null primary key,
+    		name TEXT not null unique,
+    		created_at TEXT not null,
+    		archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
+		) strict;`
+
+	createMessages = `CREATE TABLE IF NOT EXISTS messages (
+			id TEXT NOT NULL PRIMARY KEY,
+			message BLOB,
+			status TEXT not null default 'scheduled',
+			queue_id TEXT NOT NULL,
+			visible_at TEXT not null,
+			created_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ')),
+			updated_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ')),
+			FOREIGN KEY(queue_id) REFERENCES queues(name)
+		) strict;`
+
+	createArchivedMessages = `CREATE TABLE IF NOT EXISTS archived_messages (
+    		id TEXT NOT NULL PRIMARY KEY,
+			message BLOB,
+			status TEXT not null,
+			queue_id TEXT NOT NULL,
+			created_at TEXT not null,
+			updated_at TEXT not null,
+			archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
+		) strict;`
+
+	createQueue     = `INSERT INTO queues (id, name) values ($1, $2);`
+	archiveMessages = `insert into archived_messages (id, message, status, queue_id, created_at, updated_at) VALUES (:id, :message, :status, :queue_id, :created_at, :updated_at)`
 )
 
 type Sqlite struct {
@@ -29,40 +63,43 @@ func NewSqlite(dbPath string, logger *slog.Logger) (*Sqlite, error) {
 		return nil, err
 	}
 
-	err = db.Ping()
-	if err != nil {
-		return nil, err
-	}
+	s := &Sqlite{db: db, logger: logger}
 
-	return &Sqlite{db: db, logger: logger}, nil
-}
-
-func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) error {
-	return s.inTx(ctx, func(tx *sqlx.Tx) error {
-		createQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + ` (
-			id TEXT PRIMARY KEY,
-			message BLOB,
-			visible_at TEXT not null,
-			status text not null default 'scheduled',
-			created_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ')),
-			updated_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
-		) strict;`
-
-		createArchivedQueueQuery := `CREATE TABLE IF NOT EXISTS queues__` + queueName + `_archived (
-			id TEXT PRIMARY KEY,
-			message BLOB,
-			status text not null,
-			created_at TEXT not null,
-			updated_at TEXT not null,
-			archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
-		) strict;`
-
-		_, err := tx.ExecContext(ctx, createQueueQuery)
+	ctx := context.Background()
+	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
+		// create queue table
+		_, err = tx.ExecContext(ctx, createQueues)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.ExecContext(ctx, createArchivedQueueQuery)
+		// create archived queue table
+		_, err = tx.ExecContext(ctx, createArchivedQueues)
+		if err != nil {
+			return err
+		}
+
+		// create message table
+		_, err = tx.ExecContext(ctx, createMessages)
+		if err != nil {
+			return err
+		}
+
+		// create archived message table
+		_, err = tx.ExecContext(ctx, createArchivedMessages)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	return s, err
+}
+
+func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) (err error) {
+	return s.inTx(ctx, func(tx *sqlx.Tx) error {
+		_, err = tx.ExecContext(ctx, createQueue, ulid.Make().String(), queueName)
 		if err != nil {
 			return err
 		}
@@ -71,16 +108,54 @@ func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) error {
 	})
 }
 
-func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) error {
+// DeleteQueue achieves the queue and it's messages, use TruncateQueue if you want to hard delete messages
+func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) {
+	// todo: copy the messages to the queue's archived table, delete all the messages in the table, then archive the table
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
-		deleteQueueQuery := `DELETE TABLE queues__` + queueName
-		_, err := tx.ExecContext(ctx, deleteQueueQuery)
+		// delete from messages
+		rows, rowsErr := tx.QueryxContext(ctx, `delete from messages where queue_id = $1 returning *`, queueName)
+		if rowsErr != nil {
+			return rowsErr
+		}
+		defer rows.Close()
+
+		var messages []queue.LiteMessageInserter
+		for rows.Next() {
+			msg := queue.LiteMessage{}
+			if err = rows.StructScan(&msg); err != nil {
+				return err
+			}
+			messages = append(messages, msg.FormatForInserter())
+		}
+
+		//nothing to archive, exit early
+		if len(messages) == 0 {
+			return nil
+		}
+
+		// insert into archived messages
+		_, err = tx.NamedExecContext(ctx, archiveMessages, messages)
 		if err != nil {
 			return err
 		}
 
-		deleteArchivedQueueQuery := `DELETE TABLE queues__` + queueName + `_archived`
-		_, err = tx.ExecContext(ctx, deleteArchivedQueueQuery)
+		row := tx.QueryRowxContext(ctx, `DELETE FROM queues where name = $1 returning *`, queueName)
+		if row.Err() != nil {
+			if errors.Is(row.Err(), sql.ErrNoRows) {
+				// can't find the queue
+				return nil
+			}
+
+			return row.Err()
+		}
+
+		var q queue.LiteQueue
+		if err = row.StructScan(&q); err != nil {
+			return err
+		}
+
+		deleteArchivedQueueQuery := `INSERT INTO archived_queues (id, name, created_at) values ($1, $2, $3);`
+		_, err = tx.ExecContext(ctx, deleteArchivedQueueQuery, q.Id, q.Name, q.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -90,16 +165,15 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) error {
 }
 
 // Write puts an item on a queue
-func (s *Sqlite) Write(ctx context.Context, queueName string, message []byte) error {
+func (s *Sqlite) Write(ctx context.Context, queueId string, message []byte) error {
 	// todo: expose delay as a configurable value
 	now := time.Now().Add(time.Second)
-	nowFormatted := now.Format(rfc3339Milli)
-	name := fmt.Sprintf(" queues__%s", queueName)
+	nowFormatted := now.Format(queue.Rfc3339Milli)
 
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// write to the queues
-		writeQuery := `insert into ` + name + ` (id, message, visible_at) values ($1, $2, $3)`
-		_, innerErr := tx.ExecContext(ctx, writeQuery, ulid.Make().String(), message, nowFormatted)
+		writeQuery := `insert into messages (id, message, queue_id, visible_at) values ($1, $2, $3, $4)`
+		_, innerErr := tx.ExecContext(ctx, writeQuery, ulid.Make().String(), message, queueId, nowFormatted)
 		if innerErr != nil {
 			return innerErr
 		}
@@ -113,9 +187,8 @@ type id struct {
 
 // Consume fetches the first visible item from a queue
 func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.LiteMessage, err error) {
-	name := fmt.Sprintf("queues__%s", queueName)
-	getFirstItem := `select id from ` + name + ` where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
-	updateItemStatus := `update ` + name + ` set status = 'pending' where id = $1 returning *;`
+	getFirstItem := `select id from messages where queue_id = $1 and datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
+	updateItemStatus := `update messages set status = 'pending' where id = $1 and queue_id = $2 returning *;`
 
 	defer func() {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -126,7 +199,7 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// read one message from the queue
-		row := tx.QueryRowxContext(ctx, getFirstItem)
+		row := tx.QueryRowxContext(ctx, getFirstItem, queueName)
 		if row.Err() != nil {
 			return row.Err()
 		}
@@ -136,7 +209,7 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 			return rowScanErr
 		}
 
-		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id)
+		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id, queueName)
 		if row.Err() != nil {
 			return row.Err()
 		}
@@ -153,12 +226,9 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 
 // Delete removes a message from a queue
 func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (err error) {
-	name := fmt.Sprintf("queues__%s", queueName)
-	archivedName := fmt.Sprintf("queues__%s_archived", queueName)
-
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
-		deleteQuery := `delete from ` + name + ` where id = $1 returning *`
-		row := tx.QueryRowxContext(ctx, deleteQuery, msgId)
+		deleteQuery := `delete from messages where id = $1 and queue_id = $2 returning *`
+		row := tx.QueryRowxContext(ctx, deleteQuery, msgId, queueName)
 		if row.Err() != nil {
 			return row.Err()
 		}
@@ -168,8 +238,8 @@ func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (er
 			return rowScanErr
 		}
 
-		writeQuery := `insert into ` + archivedName + ` (id, message, status, created_at, updated_at) values ($1, $2, $3, $4, $5)`
-		_, innerErr := tx.ExecContext(ctx, writeQuery, msg.Id, []byte(msg.Message), msg.Status, msg.CreatedAt, msg.UpdatedAt)
+		writeQuery := `insert into archived_messages (id, message, status, queue_id, created_at, updated_at) values ($1, $2, $3, $4, $5, $6)`
+		_, innerErr := tx.ExecContext(ctx, writeQuery, msg.Id, []byte(msg.Message), msg.Status, msg.QueueId, msg.CreatedAt, msg.UpdatedAt)
 		if innerErr != nil {
 			return innerErr
 		}
@@ -179,18 +249,73 @@ func (s *Sqlite) Delete(ctx context.Context, queueName string, msgId string) (er
 	return err
 }
 
-func (s *Sqlite) Truncate(ctx context.Context, queueName string) (err error) {
-	_, err = s.db.ExecContext(ctx, fmt.Sprintf(`delete from queues__%s where id > '0'`, queueName))
-	if err != nil {
-		return err
-	}
-	return nil
+// TruncateQueue clears the contents of a queue, use DeleteQueue if you want to archive messages
+func (s *Sqlite) TruncateQueue(ctx context.Context, queueName string) (err error) {
+	return s.inTx(ctx, func(tx *sqlx.Tx) error {
+		_, err = tx.ExecContext(ctx, `DELETE FROM queues where name = $1`, queueName)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.ExecContext(ctx, `delete from messages where queue_id = $1`, queueName)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// GetArchivedMessages gets the messages on the archived queue
+func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (message []queue.LiteMessage, err error) {
+	getArchivedMessages := `select id from archived_messages where queue_id = $1 order by id desc;`
+
+	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
+		// read one message from the queue
+		rows, rowsErr := tx.QueryxContext(ctx, getArchivedMessages, queueName)
+		if rowsErr != nil {
+			return rowsErr
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var rowValue queue.LiteMessage
+			if rowScanErr := rows.StructScan(&rowValue); rowScanErr != nil {
+				return rowScanErr
+			}
+			message = append(message, rowValue)
+		}
+
+		return nil
+	})
+
+	return message, err
+}
+
+// GetArchivedQueue gets the archived queue
+func (s *Sqlite) GetArchivedQueue(ctx context.Context, queueName string) (queue queue.ArchivedLiteQueue, err error) {
+	getArchivedMessages := `select * from archived_queues where name = $1;`
+
+	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
+		// read one message from the queue
+		row := tx.QueryRowxContext(ctx, getArchivedMessages, queueName)
+		if row.Err() != nil {
+			return row.Err()
+		}
+
+		if rowScanErr := row.StructScan(&queue); rowScanErr != nil {
+			return rowScanErr
+		}
+
+		return nil
+	})
+
+	return queue, err
 }
 
 func (s *Sqlite) inTx(ctx context.Context, cb func(*sqlx.Tx) error) (err error) {
-	tx, txErr := s.db.BeginTxx(ctx, nil)
-	if txErr != nil {
-		return fmt.Errorf("cannot start tx: %w", txErr)
+	tx, beginErr := s.db.BeginTxx(ctx, nil)
+	if beginErr != nil {
+		return fmt.Errorf("cannot start tx: %w", beginErr)
 	}
 
 	defer func() {
@@ -200,20 +325,20 @@ func (s *Sqlite) inTx(ctx context.Context, cb func(*sqlx.Tx) error) (err error) 
 		}
 	}()
 
-	if err := cb(tx); err != nil {
+	if err = cb(tx); err != nil {
 		return rollback(tx, err)
 	}
 
-	if txErr := tx.Commit(); txErr != nil {
-		return fmt.Errorf("cannot commit tx: %w", txErr)
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("cannot commit tx: %w", commitErr)
 	}
 
 	return nil
 }
 
 func rollback(tx *sqlx.Tx, err error) error {
-	if txErr := tx.Rollback(); txErr != nil {
-		return fmt.Errorf("cannot roll back tx after error (tx error: %v), original error: %w", txErr, err)
+	if rollbackErr := tx.Rollback(); rollbackErr != nil {
+		return fmt.Errorf("cannot roll back tx after error (tx error: %v), original error: %w", rollbackErr, err)
 	}
 	return err
 }
