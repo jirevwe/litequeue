@@ -48,9 +48,6 @@ var (
 			updated_at TEXT not null,
 			archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
 		) strict;`
-
-	createQueue     = `INSERT INTO queues (id, name) values ($1, $2);`
-	archiveMessages = `insert into archived_messages (id, message, status, queue_id, created_at, updated_at) VALUES (:id, :message, :status, :queue_id, :created_at, :updated_at)`
 )
 
 type Sqlite struct {
@@ -100,7 +97,7 @@ func NewSqlite(dbPath string, logger *slog.Logger) (*Sqlite, error) {
 
 func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) (err error) {
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
-		_, err = tx.ExecContext(ctx, createQueue, ulid.Make().String(), queueName)
+		_, err = tx.ExecContext(ctx, `INSERT INTO queues (id, name) values ($1, $2)`, ulid.Make().String(), queueName)
 		if err != nil {
 			return err
 		}
@@ -111,7 +108,6 @@ func (s *Sqlite) CreateQueue(ctx context.Context, queueName string) (err error) 
 
 // DeleteQueue achieves the queue and it's messages, use TruncateQueue if you want to hard delete messages
 func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) {
-	// todo: copy the messages to the queue's archived table, delete all the messages in the table, then archive the table
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// delete from messages
 		rows, rowsErr := tx.QueryxContext(ctx, `delete from messages where queue_id = $1 returning *`, queueName)
@@ -135,7 +131,7 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 		}
 
 		// insert into archived messages
-		_, err = tx.NamedExecContext(ctx, archiveMessages, messages)
+		_, err = tx.NamedExecContext(ctx, `insert into archived_messages (id, message, status, queue_id, created_at, updated_at) VALUES (:id, :message, :status, :queue_id, :created_at, :updated_at)`, messages)
 		if err != nil {
 			return err
 		}
