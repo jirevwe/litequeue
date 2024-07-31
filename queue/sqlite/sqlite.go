@@ -183,9 +183,9 @@ type id struct {
 }
 
 // Consume fetches the first visible item from a queue
-func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.LiteMessage, err error) {
-	getFirstItem := `select id from messages where queue_id = $1 and datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
-	updateItemStatus := `update messages set status = 'pending' where id = $1 and queue_id = $2 returning *;`
+func (s *Sqlite) Consume(ctx context.Context) (message queue.LiteMessage, err error) {
+	getFirstItem := `select id from messages where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
+	updateItemStatus := `update messages set status = 'pending' where id = $1 returning *;`
 
 	defer func() {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -196,7 +196,7 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// read one message from the queue
-		row := tx.QueryRowxContext(ctx, getFirstItem, queueName)
+		row := tx.QueryRowxContext(ctx, getFirstItem)
 		if row.Err() != nil {
 			return row.Err()
 		}
@@ -206,7 +206,7 @@ func (s *Sqlite) Consume(ctx context.Context, queueName string) (message queue.L
 			return rowScanErr
 		}
 
-		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id, queueName)
+		row = tx.QueryRowxContext(ctx, updateItemStatus, rowValue.Id)
 		if row.Err() != nil {
 			return row.Err()
 		}

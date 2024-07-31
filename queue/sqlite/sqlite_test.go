@@ -107,18 +107,25 @@ func TestSqlite_Consume(t *testing.T) {
 	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
+	fakeQueueName := "fake-queue-name"
+	err = s.CreateQueue(ctx, fakeQueueName)
+	require.NoError(t, err)
+
 	message := []byte("hello world")
 
 	for i := 0; i < 2; i++ {
 		writeOne(t, ctx, s, queueName, []byte(fmt.Sprintf("%s_%d", message, i)), nil)
 	}
+	writeOne(t, ctx, s, fakeQueueName, []byte(fmt.Sprintf("%s_%d", message, 99)), nil)
 
 	time.Sleep(2 * time.Second)
 
-	for i := 0; i < 2; i++ {
-		msg, consumeErr := s.Consume(ctx, queueName)
+	for i := 0; i < 3; i++ {
+		msg, consumeErr := s.Consume(ctx)
 		require.NoError(t, consumeErr)
-		require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
+		if msg.QueueId != fakeQueueName {
+			require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
+		}
 	}
 }
 
@@ -139,7 +146,7 @@ func TestSqlite_TruncateQueue(t *testing.T) {
 
 	msgIds := make([]string, 2)
 	for i := 0; i < 2; i++ {
-		msg, consumeErr := s.Consume(ctx, queueName)
+		msg, consumeErr := s.Consume(ctx)
 		require.NoError(t, consumeErr)
 		require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
 		msgIds[i] = msg.Id
