@@ -3,19 +3,18 @@ package litequeue
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/jirevwe/litequeue/pool"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func Main() {
+	ctx := context.Background()
 	testQueueName := "local_queue"
 	slogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	ctx := context.Background()
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -23,7 +22,11 @@ func Main() {
 	}
 
 	dbPath := filepath.Join(dir, "litequeue.db")
-	lite, err := NewLiteQueue(ctx, dbPath, slogger)
+	lite, err := NewServer(&Config{
+		mux:    NewMux(),
+		logger: slogger,
+		dbPath: dbPath,
+	})
 	if err != nil {
 		slogger.Error(err.Error())
 		return
@@ -34,16 +37,36 @@ func Main() {
 		return
 	}
 
-	err = lite.CreateQueue(ctx, testQueueName, func(task *pool.Task) error {
+	err = lite.CreateQueue(ctx, testQueueName, jobAdder(slogger))
+	if err != nil {
+		slogger.Error(err.Error())
+		return
+	}
+
+	go lite.Start()
+
+	for {
+		t := NewTask([]byte("hello world!"), testQueueName, slogger)
+		err = lite.Write(ctx, testQueueName, t)
+		if err != nil {
+			slogger.Error(err.Error())
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
+func jobAdder(logger *slog.Logger) HandlerFunc {
+	return func(ctx context.Context, task *Task) error {
 		// todo: when we run Execute() we need to update the job status in the db
-		slogger.Info(fmt.Sprintf("task: %s", string(task.Payload())))
-		c := http.Client{}
+		logger.Info("[inside task]:", "payload", string(task.Payload()))
+		c := &http.Client{}
 		resp, err := c.Get("https://httpbin.org/post?one=two")
 		if err != nil {
 			return err
 		}
 
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			return errors.New(resp.Status)
 		}
 
@@ -55,26 +78,8 @@ func Main() {
 		defer resp.Body.Close()
 
 		// print response body
-		slogger.Info(string(respStr))
+		logger.Info("resp:", string(respStr))
 
 		return nil
-	})
-	if err != nil {
-		slogger.Error(err.Error())
-		return
 	}
-
-	t := pool.NewTask([]byte("hello world!"), slogger)
-	err = lite.Write(ctx, testQueueName, t)
-	if err != nil {
-		slogger.Error(err.Error())
-		return
-	}
-
-	// start blocks
-	lite.Start()
-}
-
-func jobAdder(ctx context.Context) {
-
 }

@@ -1,29 +1,47 @@
-package queue
+package litequeue
 
 import (
 	"context"
-	"github.com/jirevwe/litequeue/packer"
 	"time"
 )
+
+type TaskStatus string
 
 const (
 	// Rfc3339Milli is like time.RFC3339Nano, but with millisecond precision
 	Rfc3339Milli = "2006-01-02T15:04:05.000Z07:00"
 )
 
-type Queue interface {
-	// Write puts an item on a Queue
-	Write(context.Context, string, []byte) error
+const (
+	Scheduled TaskStatus = "scheduled"
+	Completed TaskStatus = "completed"
+	Archived  TaskStatus = "archived"
+	Pending   TaskStatus = "pending"
+	Active    TaskStatus = "active"
+	Retry     TaskStatus = "retry"
+)
 
-	// Consume fetches the first visible item from a Queue
-	Consume(context.Context) (LiteMessage, error)
+type Queue interface {
+	// Push puts an item on a Queue
+	Push(context.Context, string, []byte) error
+
+	// Pop fetches the first visible item from a Queue
+	Pop(context.Context) (LiteMessage, error)
 
 	// DeleteMessage removes a message from a Queue
 	DeleteMessage(context.Context, string, string) error
 
+	// CreateQueue creates a queue
 	CreateQueue(context.Context, string) error
 
+	// DeleteQueue archives a queue and it's messages
 	DeleteQueue(context.Context, string) error
+
+	// QueueExists checks if the queue exists
+	QueueExists(context.Context, string) bool
+
+	// UpdateMessageStatus updates an item's status
+	UpdateMessageStatus(context.Context, string, TaskStatus) (LiteMessage, error)
 }
 
 type LiteMessage struct {
@@ -45,7 +63,7 @@ func (l *LiteMessage) VisibleTime() time.Time {
 }
 
 func (l *LiteMessage) Marshal() ([]byte, error) {
-	return packer.EncodeMessage(l)
+	return EncodeMessage(l)
 }
 
 func (l *LiteMessage) FormatForInserter() LiteMessageInserter {

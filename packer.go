@@ -1,4 +1,4 @@
-package packer
+package litequeue
 
 import (
 	"bytes"

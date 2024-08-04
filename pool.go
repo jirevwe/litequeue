@@ -1,4 +1,4 @@
-package pool
+package litequeue
 
 type Pool interface {
 	// Start gets the worker pool ready-to-process jobs, and should only be called once

@@ -1,4 +1,4 @@
-package pool
+package litequeue
 
 import (
 	"errors"
@@ -26,10 +26,13 @@ type WorkerPool struct {
 
 	wg *sync.WaitGroup
 
+	mux *Mux
+
 	log *slog.Logger
 
-	// channel used to signal up a layer about work status
-	notifyChan chan *Task
+	started chan *Task
+
+	finished chan *Task
 }
 
 func (p *WorkerPool) Start() {
@@ -41,7 +44,7 @@ func (p *WorkerPool) Start() {
 
 func (p *WorkerPool) startWorkers() {
 	for i := 0; i < len(p.workers); i++ {
-		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.notifyChan, p.wg, p.log)
+		w := NewWorker(fmt.Sprintf("worker_%d", i+1), p.tasks, p.globalQuit, p.started, p.finished, p.wg, p.log, p.mux)
 		p.workers[i] = w
 		p.wg.Add(1)
 		go w.Start()
@@ -93,19 +96,21 @@ func (p *WorkerPool) AddWork(t *Task) error {
 	return nil
 }
 
-func NewWorkerPool(numWorkers, size uint, log *slog.Logger, notifyChan chan *Task) Pool {
+func NewWorkerPool(numWorkers, size uint, log *slog.Logger, started chan *Task, finished chan *Task, mux *Mux) Pool {
 	// size of the internal queue
 	tasks := make(chan *Task, size)
 
 	return &WorkerPool{
 		// number of workers in the pool
 		workers:    make([]*Worker, numWorkers),
-		tasks:      tasks,
-		start:      sync.Once{},
-		stop:       sync.Once{},
 		globalQuit: make(chan bool, 1),
 		wg:         &sync.WaitGroup{},
-		notifyChan: notifyChan,
+		stop:       sync.Once{},
+		start:      sync.Once{},
+		finished:   finished,
+		started:    started,
+		tasks:      tasks,
+		mux:        mux,
 		log:        log,
 	}
 }

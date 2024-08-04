@@ -1,8 +1,6 @@
-package pool
+package litequeue
 
 import (
-	"log/slog"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -50,11 +48,10 @@ func (t *TestTask) hitFailureCase() bool {
 	return t.failureHandled
 }
 
-var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
-var notifyChan = make(chan Task, 1)
+var notifyChan = make(chan *Task, 1)
 
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
-	p := NewWorkerPool(5, 1, slogger, notifyChan)
+	p := NewWorkerPool(5, 1, slogger, notifyChan, notifyChan, NewMux())
 
 	// We're just checking to make sure multiple
 	// calls to start or stop don't cause a panic
@@ -97,7 +94,7 @@ func TestWorkerPool_Work(t *testing.T) {
 		tasks = append(tasks, NewTestTask(c.Inc(t), wg))
 	}
 
-	p := NewWorkerPool(5, uint(len(tasks)), slogger, notifyChan)
+	p := NewWorkerPool(5, uint(len(tasks)), slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 
 	for _, j := range tasks {
@@ -115,7 +112,7 @@ func TestWorkerPool_Work(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
-	p := NewWorkerPool(4, 10, slogger, notifyChan)
+	p := NewWorkerPool(4, 10, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 
@@ -149,7 +146,7 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 }
 
 func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
-	p := NewWorkerPool(10, 10, slogger, notifyChan)
+	p := NewWorkerPool(10, 10, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 
@@ -185,7 +182,7 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop_2(t *testing.T) {
-	p := NewWorkerPool(4, 10, slogger, notifyChan)
+	p := NewWorkerPool(4, 10, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 

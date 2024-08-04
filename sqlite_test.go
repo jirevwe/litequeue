@@ -1,4 +1,4 @@
-package sqlite
+package litequeue
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func TestSqlite_DeleteQueue_NonEmptyQueue(t *testing.T) {
 	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
-	err = s.Write(ctx, queueName, []byte("hello world"))
+	err = s.Push(ctx, queueName, []byte("hello world"))
 	require.NoError(t, err)
 
 	require.NoError(t, s.DeleteQueue(ctx, queueName))
@@ -78,7 +78,7 @@ func TestSqlite_WriteOne(t *testing.T) {
 	err := s.CreateQueue(ctx, queueName)
 	require.NoError(t, err)
 
-	err = s.Write(ctx, queueName, []byte("hello world"))
+	err = s.Push(ctx, queueName, []byte("hello world"))
 	require.NoError(t, err)
 }
 
@@ -121,7 +121,7 @@ func TestSqlite_Consume(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	for i := 0; i < 3; i++ {
-		msg, consumeErr := s.Consume(ctx)
+		msg, consumeErr := s.Pop(ctx)
 		require.NoError(t, consumeErr)
 		if msg.QueueId != fakeQueueName {
 			require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
@@ -146,7 +146,7 @@ func TestSqlite_TruncateQueue(t *testing.T) {
 
 	msgIds := make([]string, 2)
 	for i := 0; i < 2; i++ {
-		msg, consumeErr := s.Consume(ctx)
+		msg, consumeErr := s.Pop(ctx)
 		require.NoError(t, consumeErr)
 		require.Equal(t, fmt.Sprintf("%s_%d", message, i), msg.Message)
 		msgIds[i] = msg.Id
@@ -163,7 +163,7 @@ func TestSqlite_TruncateQueue(t *testing.T) {
 }
 
 func writeOne(t *testing.T, ctx context.Context, ss *Sqlite, qName string, message []byte, w *sync.WaitGroup) {
-	err := ss.Write(ctx, qName, message)
+	err := ss.Push(ctx, qName, message)
 	require.NoError(t, err)
 
 	if w != nil {

@@ -1,4 +1,4 @@
-package pool
+package litequeue
 
 import (
 	"log/slog"
@@ -6,28 +6,32 @@ import (
 )
 
 type Task struct {
+	taskid   string
 	typeName string
 	message  []byte
 	log      *slog.Logger
 	Options  TaskOption
-
-	// leave these here as placeholders for now
-	Execute func(task *Task) error
-	OnError func(error)
 }
 
+func (t *Task) Id() string      { return t.taskid }
 func (t *Task) Type() string    { return t.typeName }
 func (t *Task) Payload() []byte { return t.message }
 
-func NewTask(message []byte, log *slog.Logger) *Task {
+func NewTask(message []byte, queueId string, log *slog.Logger) *Task {
 	return &Task{
-		message: message,
-		log:     log,
+		typeName: queueId,
+		message:  message,
+		log:      log,
 	}
 }
 
+func (t *Task) WithTaskId(id string) *Task {
+	t.taskid = id
+	return t
+}
+
 type TaskOption struct {
-	// todo: add task proper task options
+	// todo: Register task proper task options
 	options map[string]any
 	mu      *sync.Mutex
 }

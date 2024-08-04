@@ -1,12 +1,10 @@
-package sqlite
+package litequeue
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/jirevwe/litequeue/queue"
-	"github.com/jirevwe/litequeue/util"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/ulid/v2"
@@ -49,6 +47,10 @@ var (
 			archived_at TEXT not null default (strftime('%Y-%m-%dT%H:%M:%fZ'))
 		) strict;`
 )
+
+type id struct {
+	Id string `db:"id"`
+}
 
 type Sqlite struct {
 	logger *slog.Logger
@@ -116,9 +118,9 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 		}
 		defer rows.Close()
 
-		var messages []queue.LiteMessageInserter
+		var messages []LiteMessageInserter
 		for rows.Next() {
-			msg := queue.LiteMessage{}
+			msg := LiteMessage{}
 			if err = rows.StructScan(&msg); err != nil {
 				return err
 			}
@@ -146,7 +148,7 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 			return row.Err()
 		}
 
-		var q queue.LiteQueue
+		var q LiteQueue
 		if err = row.StructScan(&q); err != nil {
 			return err
 		}
@@ -161,11 +163,11 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 	})
 }
 
-// Write puts an item on a queue
-func (s *Sqlite) Write(ctx context.Context, queueId string, message []byte) error {
+// Push puts an item on a queue
+func (s *Sqlite) Push(ctx context.Context, queueId string, message []byte) error {
 	// todo: expose delay as a configurable value
-	now := util.NewRealClock().Now().Add(time.Second)
-	nowFormatted := now.Format(queue.Rfc3339Milli)
+	now := NewRealClock().Now().Add(time.Second)
+	nowFormatted := now.Format(Rfc3339Milli)
 
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// write to the queues
@@ -178,12 +180,8 @@ func (s *Sqlite) Write(ctx context.Context, queueId string, message []byte) erro
 	})
 }
 
-type id struct {
-	Id string `db:"id"`
-}
-
-// Consume fetches the first visible item from a queue
-func (s *Sqlite) Consume(ctx context.Context) (message queue.LiteMessage, err error) {
+// Pop fetches the first visible item from a queue
+func (s *Sqlite) Pop(ctx context.Context) (message LiteMessage, err error) {
 	getFirstItem := `select id from messages where datetime(visible_at) < CURRENT_TIMESTAMP and status = 'scheduled' order by id limit 1;`
 	updateItemStatus := `update messages set status = 'pending' where id = $1 returning *;`
 
@@ -230,7 +228,7 @@ func (s *Sqlite) DeleteMessage(ctx context.Context, queueName string, msgId stri
 			return row.Err()
 		}
 
-		var msg queue.LiteMessage
+		var msg LiteMessage
 		if rowScanErr := row.StructScan(&msg); rowScanErr != nil {
 			return rowScanErr
 		}
@@ -263,7 +261,7 @@ func (s *Sqlite) TruncateQueue(ctx context.Context, queueName string) (err error
 }
 
 // GetArchivedMessages gets the messages on the archived queue
-func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (message []queue.LiteMessage, err error) {
+func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (message []LiteMessage, err error) {
 	getArchivedMessages := `select id from archived_messages where queue_id = $1 order by id desc;`
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
@@ -275,7 +273,7 @@ func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (mes
 		defer rows.Close()
 
 		for rows.Next() {
-			var rowValue queue.LiteMessage
+			var rowValue LiteMessage
 			if rowScanErr := rows.StructScan(&rowValue); rowScanErr != nil {
 				return rowScanErr
 			}
@@ -288,8 +286,29 @@ func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (mes
 	return message, err
 }
 
+// UpdateMessageStatus updates the task's status
+func (s *Sqlite) UpdateMessageStatus(ctx context.Context, id string, state TaskStatus) (message LiteMessage, err error) {
+	fmt.Printf("id: %+v\n", id)
+	updateItemStatus := `update messages set status = $1 where id = $2 returning *;`
+
+	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
+		row := tx.QueryRowxContext(ctx, updateItemStatus, string(state), id)
+		if row.Err() != nil {
+			return row.Err()
+		}
+
+		if rowScanErr := row.StructScan(&message); rowScanErr != nil {
+			return rowScanErr
+		}
+
+		return nil
+	})
+
+	return message, err
+}
+
 // GetArchivedQueue gets the archived queue
-func (s *Sqlite) GetArchivedQueue(ctx context.Context, queueName string) (queue queue.ArchivedLiteQueue, err error) {
+func (s *Sqlite) GetArchivedQueue(ctx context.Context, queueName string) (queue ArchivedLiteQueue, err error) {
 	getArchivedMessages := `select * from archived_queues where name = $1;`
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
@@ -307,6 +326,22 @@ func (s *Sqlite) GetArchivedQueue(ctx context.Context, queueName string) (queue 
 	})
 
 	return queue, err
+}
+
+func (s *Sqlite) QueueExists(ctx context.Context, queueName string) bool {
+	var q LiteQueue
+	row := s.db.QueryRowxContext(ctx, `select * from queues where name = $1`, queueName)
+	if row.Err() != nil {
+		return false
+	}
+
+	if rowScanErr := row.StructScan(&q); rowScanErr == nil {
+		if &q != nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Sqlite) inTx(ctx context.Context, cb func(*sqlx.Tx) error) (err error) {
