@@ -17,11 +17,11 @@ type Server struct {
 
 	// todo: change this to TaskInfo
 	// started is a channel used to signal up a layer about work starting status
-	started chan *Task
+	started chan *TaskInfo
 
 	// todo: change this to TaskInfo
 	// finished is a channel used to signal up a layer about work completion status
-	finished chan *Task
+	finished chan *TaskInfo
 }
 
 type Config struct {
@@ -48,8 +48,8 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg.mux = NewMux()
 	}
 
-	started := make(chan *Task, 10)
-	finished := make(chan *Task, 10)
+	started := make(chan *TaskInfo, 10)
+	finished := make(chan *TaskInfo, 10)
 	workerPool := NewWorkerPool(10, 10, cfg.logger, started, finished, cfg.mux)
 
 	q := &Server{
@@ -88,13 +88,13 @@ func (q *Server) Start() {
 		select {
 		case <-q.ctx.Done():
 			break
-		case task := <-q.started:
-			_, err := q.queue.UpdateMessageStatus(q.ctx, task.Id(), Active)
+		case info := <-q.started:
+			_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
 			if err != nil {
 				q.logger.Error(err.Error(), "source", "started")
 			}
-		case task := <-q.finished:
-			_, err := q.queue.UpdateMessageStatus(q.ctx, task.Id(), Completed)
+		case info := <-q.finished:
+			_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
 			if err != nil {
 				q.logger.Error(err.Error(), "source", "finished")
 			}
@@ -112,7 +112,7 @@ func (q *Server) Start() {
 			continue
 		}
 
-		task := NewTask([]byte(liteMessage.Message), liteMessage.QueueId, q.logger).WithTaskId(liteMessage.Id)
+		task := NewTask([]byte(liteMessage.Message), liteMessage.QueueId).WithTaskId(liteMessage.Id)
 		err = q.workerPool.AddWork(task)
 		if err != nil {
 			q.logger.Error(err.Error(), "func", "workerPool.AddWork")

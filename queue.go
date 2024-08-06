@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-type TaskStatus string
+type (
+	TaskStatus      string
+	TaskStatusLevel int
+)
 
 const (
 	// Rfc3339Milli is like time.RFC3339Nano, but with millisecond precision
@@ -20,6 +23,77 @@ const (
 	Active    TaskStatus = "active"
 	Retry     TaskStatus = "retry"
 )
+
+const (
+	ScheduledLevel TaskStatusLevel = iota
+	PendingLevel
+	ActiveLevel
+	RetryLevel
+	CompletedLevel
+	ArchivedLevel
+)
+
+func taskStatusFromInt(i int) TaskStatusLevel {
+	return TaskStatusLevel(i)
+}
+
+func taskStatusLevelFromString(s string) TaskStatusLevel {
+	return taskLevelFromStatus(taskStatusFromString(s))
+}
+
+func taskStatusFromString(s string) TaskStatus {
+	switch s {
+	case "scheduled":
+		return Scheduled
+	case "completed":
+		return Completed
+	case "archived":
+		return Archived
+	case "pending":
+		return Pending
+	case "active":
+		return Active
+	case "retry":
+		return Retry
+	}
+	return Scheduled
+}
+
+func taskStatusFromLevel(l TaskStatusLevel) TaskStatus {
+	switch l {
+	case ScheduledLevel:
+		return Scheduled
+	case PendingLevel:
+		return Pending
+	case ActiveLevel:
+		return Active
+	case RetryLevel:
+		return Retry
+	case CompletedLevel:
+		return Completed
+	case ArchivedLevel:
+		return Archived
+	}
+	return Scheduled
+}
+
+func taskLevelFromStatus(l TaskStatus) TaskStatusLevel {
+	switch l {
+	case Scheduled:
+		return ScheduledLevel
+	case Pending:
+		return PendingLevel
+	case Active:
+		return ActiveLevel
+	case Retry:
+		return RetryLevel
+	case Completed:
+		return CompletedLevel
+	case Archived:
+		return ArchivedLevel
+	}
+	return ScheduledLevel
+}
 
 type Queue interface {
 	// Push puts an item on a Queue
@@ -41,7 +115,7 @@ type Queue interface {
 	QueueExists(context.Context, string) bool
 
 	// UpdateMessageStatus updates an item's status
-	UpdateMessageStatus(context.Context, string, TaskStatus) (LiteMessage, error)
+	UpdateMessageStatus(context.Context, string, TaskStatusLevel) (LiteMessage, error)
 }
 
 type LiteMessage struct {

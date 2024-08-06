@@ -46,7 +46,7 @@ func Main() {
 	go lite.Start()
 
 	for {
-		t := NewTask([]byte("hello world!"), testQueueName, slogger)
+		t := NewTask([]byte("hello world!"), testQueueName)
 		err = lite.Write(ctx, testQueueName, t)
 		if err != nil {
 			slogger.Error(err.Error())

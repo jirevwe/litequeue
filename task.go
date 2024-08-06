@@ -1,32 +1,29 @@
 package litequeue
 
 import (
-	"log/slog"
 	"sync"
 )
 
 type Task struct {
-	taskid   string
+	taskId   string
 	typeName string
 	message  []byte
-	log      *slog.Logger
 	Options  TaskOption
 }
 
-func (t *Task) Id() string      { return t.taskid }
+func (t *Task) Id() string      { return t.taskId }
 func (t *Task) Type() string    { return t.typeName }
 func (t *Task) Payload() []byte { return t.message }
 
-func NewTask(message []byte, queueId string, log *slog.Logger) *Task {
+func NewTask(message []byte, queueId string) *Task {
 	return &Task{
 		typeName: queueId,
 		message:  message,
-		log:      log,
 	}
 }
 
 func (t *Task) WithTaskId(id string) *Task {
-	t.taskid = id
+	t.taskId = id
 	return t
 }
 
@@ -49,4 +46,9 @@ func (o *TaskOption) GetOption(key string) *any {
 		return &value
 	}
 	return nil
+}
+
+type TaskInfo struct {
+	task        *Task
+	statusLevel TaskStatusLevel
 }

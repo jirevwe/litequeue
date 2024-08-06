@@ -30,9 +30,9 @@ type WorkerPool struct {
 
 	log *slog.Logger
 
-	started chan *Task
+	started chan *TaskInfo
 
-	finished chan *Task
+	finished chan *TaskInfo
 }
 
 func (p *WorkerPool) Start() {
@@ -96,7 +96,7 @@ func (p *WorkerPool) AddWork(t *Task) error {
 	return nil
 }
 
-func NewWorkerPool(numWorkers, size uint, log *slog.Logger, started chan *Task, finished chan *Task, mux *Mux) Pool {
+func NewWorkerPool(numWorkers, size uint, log *slog.Logger, started chan *TaskInfo, finished chan *TaskInfo, mux *Mux) Pool {
 	// size of the internal queue
 	tasks := make(chan *Task, size)
 

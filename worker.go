@@ -22,12 +22,12 @@ type Worker struct {
 	wg *sync.WaitGroup
 
 	mux      *Mux
-	started  chan *Task
-	finished chan *Task
+	started  chan *TaskInfo
+	finished chan *TaskInfo
 	log      *slog.Logger
 }
 
-func NewWorker(id string, tasks chan *Task, quit chan bool, started chan *Task, finished chan *Task, wg *sync.WaitGroup, log *slog.Logger, mux *Mux) *Worker {
+func NewWorker(id string, tasks chan *Task, quit chan bool, started chan *TaskInfo, finished chan *TaskInfo, wg *sync.WaitGroup, log *slog.Logger, mux *Mux) *Worker {
 	return &Worker{
 		id:       id,
 		wg:       wg,
@@ -60,10 +60,8 @@ func (w *Worker) Start() {
 
 			// todo: should we check if the task's context is done?
 
-			// todo: fix the race condition where the status could be set to completed then set to active after
-
 			// notify that the task is "Active"
-			w.started <- task
+			w.started <- &TaskInfo{task: task, statusLevel: ActiveLevel}
 
 			// find the task's exec func and run it
 			err := w.mux.ProcessTask(context.Background(), task)
@@ -73,7 +71,7 @@ func (w *Worker) Start() {
 
 			// todo: we write to channel to notify the pool that work was done or failed
 			// notify that the task is "Completed" or "Failed"
-			w.finished <- task
+			w.finished <- &TaskInfo{task: task, statusLevel: CompletedLevel}
 
 			continue
 		}

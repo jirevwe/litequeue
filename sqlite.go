@@ -287,12 +287,26 @@ func (s *Sqlite) GetArchivedMessages(ctx context.Context, queueName string) (mes
 }
 
 // UpdateMessageStatus updates the task's status
-func (s *Sqlite) UpdateMessageStatus(ctx context.Context, id string, state TaskStatus) (message LiteMessage, err error) {
-	fmt.Printf("id: %+v\n", id)
+func (s *Sqlite) UpdateMessageStatus(ctx context.Context, id string, state TaskStatusLevel) (message LiteMessage, err error) {
 	updateItemStatus := `update messages set status = $1 where id = $2 returning *;`
+	getItemById := `select * from messages where id = $1`
 
 	err = s.inTx(ctx, func(tx *sqlx.Tx) error {
-		row := tx.QueryRowxContext(ctx, updateItemStatus, string(state), id)
+		row := tx.QueryRowxContext(ctx, getItemById, id)
+		if row.Err() != nil {
+			return row.Err()
+		}
+
+		var rowValue LiteMessage
+		if rowScanErr := row.StructScan(&rowValue); rowScanErr != nil {
+			return rowScanErr
+		}
+
+		if taskStatusLevelFromString(rowValue.Status) > state {
+			return fmt.Errorf("task is already in the %s state", rowValue.Status)
+		}
+
+		row = tx.QueryRowxContext(ctx, updateItemStatus, string(taskStatusFromLevel(state)), id)
 		if row.Err() != nil {
 			return row.Err()
 		}
