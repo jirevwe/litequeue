@@ -3,6 +3,8 @@ package litequeue
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/oklog/ulid/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -46,22 +48,21 @@ func Main() {
 	go lite.Start()
 
 	for {
-		t := NewTask([]byte("hello world!"), testQueueName)
+		t := NewTask([]byte(fmt.Sprintf("hello %s!", ulid.Make().String())), testQueueName)
 		err = lite.Write(ctx, testQueueName, t)
 		if err != nil {
 			slogger.Error(err.Error())
 			return
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
 func jobAdder(logger *slog.Logger) HandlerFunc {
 	return func(ctx context.Context, task *Task) error {
-		// todo: when we run Execute() we need to update the job status in the db
-		logger.Info("[inside task]:", "payload", string(task.Payload()))
+		//logger.Info("[inside task]:", "payload", string(task.Payload()))
 		c := &http.Client{}
-		resp, err := c.Get("https://httpbin.org/post?one=two")
+		resp, err := c.Get("https://test-webhook.getconvoy.io/200")
 		if err != nil {
 			return err
 		}
@@ -78,7 +79,7 @@ func jobAdder(logger *slog.Logger) HandlerFunc {
 		defer resp.Body.Close()
 
 		// print response body
-		logger.Info("resp:", string(respStr))
+		logger.Info("[inside task]:", "resp:", string(respStr))
 
 		return nil
 	}

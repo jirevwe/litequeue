@@ -58,7 +58,22 @@ type Sqlite struct {
 }
 
 func NewSqlite(dbPath string, logger *slog.Logger) (*Sqlite, error) {
-	db, err := sqlx.Open("sqlite3", fmt.Sprintf("%s?_journal_mode=WAL&_foreign_keys=off&_auto_vacuum=full", dbPath))
+	db, err := sqlx.Open("sqlite3", fmt.Sprintf("%s?cache=shared&mode=rwc&_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=5000", dbPath))
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = db.Exec("PRAGMA journal_size_limit = 67108864;")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = db.Exec("PRAGMA mmap_size = 134217728;")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = db.Exec("PRAGMA cache_size = 2000;")
 	if err != nil {
 		return nil, err
 	}

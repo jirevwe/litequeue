@@ -63,15 +63,17 @@ func (w *Worker) Start() {
 			// notify that the task is "Active"
 			w.started <- &TaskInfo{task: task, statusLevel: ActiveLevel}
 
-			// find the task's exec func and run it
-			err := w.mux.ProcessTask(context.Background(), task)
-			if err != nil {
-				w.log.Error(fmt.Sprintf("worker %s failed to execute task: %s", w.id, err.Error()))
-			}
+			go func() {
+				// find the task's exec func and run it
+				err := w.mux.ProcessTask(context.Background(), task)
+				if err != nil {
+					w.log.Error(fmt.Sprintf("worker %s failed to execute task: %s", w.id, err.Error()))
+				}
 
-			// todo: we write to channel to notify the pool that work was done or failed
-			// notify that the task is "Completed" or "Failed"
-			w.finished <- &TaskInfo{task: task, statusLevel: CompletedLevel}
+				// todo: we write to channel to notify the pool that work was done or failed
+				// notify that the task is "Completed" or "Failed"
+				w.finished <- &TaskInfo{task: task, statusLevel: CompletedLevel}
+			}()
 
 			continue
 		}

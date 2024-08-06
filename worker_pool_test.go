@@ -48,10 +48,10 @@ func (t *TestTask) hitFailureCase() bool {
 	return t.failureHandled
 }
 
-var notifyChan = make(chan *Task, 1)
+var notifyChan = make(chan *TaskInfo, 1)
 
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
-	p := NewWorkerPool(5, 1, slogger, notifyChan, notifyChan, NewMux())
+	p := NewWorkerPool(5, slogger, notifyChan, notifyChan, NewMux())
 
 	// We're just checking to make sure multiple
 	// calls to start or stop don't cause a panic
@@ -94,7 +94,7 @@ func TestWorkerPool_Work(t *testing.T) {
 		tasks = append(tasks, NewTestTask(c.Inc(t), wg))
 	}
 
-	p := NewWorkerPool(5, uint(len(tasks)), slogger, notifyChan, notifyChan, NewMux())
+	p := NewWorkerPool(5, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 
 	for _, j := range tasks {
@@ -112,7 +112,7 @@ func TestWorkerPool_Work(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
-	p := NewWorkerPool(4, 10, slogger, notifyChan, notifyChan, NewMux())
+	p := NewWorkerPool(4, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 
@@ -146,7 +146,7 @@ func TestWorkerPool_ProcessRemainingTasksAfterStop(t *testing.T) {
 }
 
 func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
-	p := NewWorkerPool(10, 10, slogger, notifyChan, notifyChan, NewMux())
+	p := NewWorkerPool(10, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 
@@ -182,14 +182,14 @@ func TestWorkerPool_RaceConditionOnStop(t *testing.T) {
 }
 
 func TestWorkerPool_ProcessRemainingTasksAfterStop_2(t *testing.T) {
-	p := NewWorkerPool(4, 10, slogger, notifyChan, notifyChan, NewMux())
+	p := NewWorkerPool(4, slogger, notifyChan, notifyChan, NewMux())
 	p.Start()
 	c := NewCounterTest()
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
-		go require.NoError(t, p.AddWork(NewTestTask(c.Inc(t), wg)))
+		go require.NoError(t, p.AddWork(NewTask(c.Inc(t), wg)))
 	}
 
 	// Sleep for a short time to ensure workers have started processing tasks

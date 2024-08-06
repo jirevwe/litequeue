@@ -52,11 +52,15 @@ func (p *WorkerPool) startWorkers() {
 }
 
 // AddWorkNonBlocking adds work to the WorkerPool and returns immediately
-func (p *WorkerPool) AddWorkNonBlocking(t *Task) {
+func (p *WorkerPool) AddWorkNonBlocking(t *Task, errChan chan error) {
 	go func() {
 		err := p.AddWork(t)
 		if err != nil {
-			p.log.Error(err.Error())
+			if errChan != nil {
+				errChan <- err
+			} else {
+				p.log.Error(err.Error())
+			}
 		}
 	}()
 }
@@ -96,9 +100,9 @@ func (p *WorkerPool) AddWork(t *Task) error {
 	return nil
 }
 
-func NewWorkerPool(numWorkers, size uint, log *slog.Logger, started chan *TaskInfo, finished chan *TaskInfo, mux *Mux) Pool {
+func NewWorkerPool(numWorkers uint, log *slog.Logger, started chan *TaskInfo, finished chan *TaskInfo, mux *Mux) Pool {
 	// size of the internal queue
-	tasks := make(chan *Task, size)
+	tasks := make(chan *Task, 1000)
 
 	return &WorkerPool{
 		// number of workers in the pool

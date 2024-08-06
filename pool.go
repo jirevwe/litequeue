@@ -11,4 +11,9 @@ type Pool interface {
 	// AddWork adds a task for the worker pool to process. It is only valid after
 	// Start() has been called and before Stop() has been called.
 	AddWork(*Task) error
+
+	// AddWorkNonBlocking adds a task for the worker pool to process but doesn't return an error
+	// It is only valid after, it passes the error to a channel.
+	// Start() has been called and before Stop() has been called.
+	AddWorkNonBlocking(*Task, chan error)
 }
