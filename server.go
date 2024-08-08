@@ -88,12 +88,22 @@ func (q *Server) Start() {
 		case <-q.ctx.Done():
 			break
 		case info := <-q.started:
-			_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
+			r := NewRetry(10, time.Second, func() error {
+				_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
+				return err
+			})
+
+			err := r.Do()
 			if err != nil {
 				q.logger.Error(err.Error(), "source", "started")
 			}
 		case info := <-q.finished:
-			_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
+			r := NewRetry(10, time.Second, func() error {
+				_, err := q.queue.UpdateMessageStatus(q.ctx, info.task.Id(), info.statusLevel)
+				return err
+			})
+
+			err := r.Do()
 			if err != nil {
 				q.logger.Error(err.Error(), "source", "finished")
 			}

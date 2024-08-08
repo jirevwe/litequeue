@@ -16,12 +16,12 @@ const (
 )
 
 const (
-	Scheduled TaskStatus = "scheduled"
-	Completed TaskStatus = "completed"
-	Archived  TaskStatus = "archived"
-	Pending   TaskStatus = "pending"
-	Active    TaskStatus = "active"
-	Retry     TaskStatus = "retry"
+	StatusScheduled TaskStatus = "scheduled"
+	StatusCompleted TaskStatus = "completed"
+	StatusArchived  TaskStatus = "archived"
+	StatusPending   TaskStatus = "pending"
+	StatusActive    TaskStatus = "active"
+	StatusRetry     TaskStatus = "retry"
 )
 
 const (
@@ -44,52 +44,52 @@ func taskStatusLevelFromString(s string) TaskStatusLevel {
 func taskStatusFromString(s string) TaskStatus {
 	switch s {
 	case "scheduled":
-		return Scheduled
+		return StatusScheduled
 	case "completed":
-		return Completed
+		return StatusCompleted
 	case "archived":
-		return Archived
+		return StatusArchived
 	case "pending":
-		return Pending
+		return StatusPending
 	case "active":
-		return Active
+		return StatusActive
 	case "retry":
-		return Retry
+		return StatusRetry
 	}
-	return Scheduled
+	return StatusScheduled
 }
 
 func taskStatusFromLevel(l TaskStatusLevel) TaskStatus {
 	switch l {
 	case ScheduledLevel:
-		return Scheduled
+		return StatusScheduled
 	case PendingLevel:
-		return Pending
+		return StatusPending
 	case ActiveLevel:
-		return Active
+		return StatusActive
 	case RetryLevel:
-		return Retry
+		return StatusRetry
 	case CompletedLevel:
-		return Completed
+		return StatusCompleted
 	case ArchivedLevel:
-		return Archived
+		return StatusArchived
 	}
-	return Scheduled
+	return StatusScheduled
 }
 
 func taskLevelFromStatus(l TaskStatus) TaskStatusLevel {
 	switch l {
-	case Scheduled:
+	case StatusScheduled:
 		return ScheduledLevel
-	case Pending:
+	case StatusPending:
 		return PendingLevel
-	case Active:
+	case StatusActive:
 		return ActiveLevel
-	case Retry:
+	case StatusRetry:
 		return RetryLevel
-	case Completed:
+	case StatusCompleted:
 		return CompletedLevel
-	case Archived:
+	case StatusArchived:
 		return ArchivedLevel
 	}
 	return ScheduledLevel

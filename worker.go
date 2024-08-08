@@ -68,10 +68,9 @@ func (w *Worker) Start() {
 				err := w.mux.ProcessTask(context.Background(), task)
 				if err != nil {
 					w.log.Error(fmt.Sprintf("worker %s failed to execute task: %s", w.id, err.Error()))
+					w.finished <- &TaskInfo{task: task, statusLevel: ArchivedLevel}
 				}
 
-				// todo: we write to channel to notify the pool that work was done or failed
-				// notify that the task is "Completed" or "Failed"
 				w.finished <- &TaskInfo{task: task, statusLevel: CompletedLevel}
 			}()
 

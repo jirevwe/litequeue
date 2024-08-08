@@ -321,6 +321,8 @@ func (s *Sqlite) UpdateMessageStatus(ctx context.Context, id string, state TaskS
 			return fmt.Errorf("task is already in the %s state", rowValue.Status)
 		}
 
+		// todo: add latency field to denote how long the job took to run
+		// todo: add migration support to add latency field
 		row = tx.QueryRowxContext(ctx, updateItemStatus, string(taskStatusFromLevel(state)), id)
 		if row.Err() != nil {
 			return row.Err()
