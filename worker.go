@@ -63,6 +63,7 @@ func (w *Worker) Start() {
 			// notify that the task is "Active"
 			w.started <- &TaskInfo{task: task, statusLevel: ActiveLevel}
 
+			// todo: find out if we are only creating "x" number of goroutines based on what is passed to the pool
 			go func() {
 				// find the task's exec func and run it
 				err := w.mux.ProcessTask(context.Background(), task)

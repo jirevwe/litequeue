@@ -33,6 +33,8 @@ type WorkerPool struct {
 	started chan *TaskInfo
 
 	finished chan *TaskInfo
+
+	// todo: implement prometheus to expose metrics about 1) work done (failed and successful tasks) 2) how many goroutines are being created 3) latency of a queue 4) task throughput
 }
 
 func (p *WorkerPool) Start() {

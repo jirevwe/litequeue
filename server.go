@@ -68,6 +68,7 @@ func (q *Server) CreateQueue(ctx context.Context, queueName string, handlerFunc 
 	// fetch the queue, so we don't have to create it again if it already exists
 	if !q.queue.QueueExists(ctx, queueName) {
 		// try to create the queue, if it succeeds, Register it to the list of queues
+		// todo: add support to create queues with priority at runtime
 		if err := q.queue.CreateQueue(ctx, queueName); err != nil {
 			return err
 		}
