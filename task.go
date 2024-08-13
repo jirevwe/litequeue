@@ -1,14 +1,12 @@
 package litequeue
 
-import (
-	"sync"
-)
+import "time"
 
 type Task struct {
 	taskId   string
 	typeName string
 	message  []byte
-	Options  TaskOption
+	delay    time.Duration
 }
 
 func (t *Task) Id() string      { return t.taskId }
@@ -27,25 +25,13 @@ func (t *Task) WithTaskId(id string) *Task {
 	return t
 }
 
-type TaskOption struct {
-	// todo: Register task proper task options
-	options map[string]any
-	mu      *sync.Mutex
+func (t *Task) WithDelay(delay time.Duration) *Task {
+	t.delay = delay
+	return t
 }
 
-func (o *TaskOption) AddOption(key string, value any) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.options[key] = value
-}
-
-func (o *TaskOption) GetOption(key string) *any {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if value, ok := o.options[key]; ok {
-		return &value
-	}
-	return nil
+func (t *Task) Delay() time.Duration {
+	return t.delay
 }
 
 type TaskInfo struct {

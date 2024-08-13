@@ -9,7 +9,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oklog/ulid/v2"
 	"log/slog"
-	"time"
 )
 
 var (
@@ -179,15 +178,11 @@ func (s *Sqlite) DeleteQueue(ctx context.Context, queueName string) (err error) 
 }
 
 // Push puts an item on a queue
-func (s *Sqlite) Push(ctx context.Context, queueId string, message []byte) error {
-	// todo: expose delay as a configurable value
-	now := NewRealClock().Now().Add(time.Second)
-	nowFormatted := now.Format(Rfc3339Milli)
-
+func (s *Sqlite) Push(ctx context.Context, message *LiteMessage) error {
 	return s.inTx(ctx, func(tx *sqlx.Tx) error {
 		// write to the queues
 		writeQuery := `insert into messages (id, message, queue_id, visible_at) values ($1, $2, $3, $4)`
-		_, innerErr := tx.ExecContext(ctx, writeQuery, ulid.Make().String(), message, queueId, nowFormatted)
+		_, innerErr := tx.ExecContext(ctx, writeQuery, message.Id, message.Message, message.QueueId, message.VisibleTime())
 		if innerErr != nil {
 			return innerErr
 		}

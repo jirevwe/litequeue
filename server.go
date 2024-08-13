@@ -122,7 +122,9 @@ func (q *Server) Start() {
 			continue
 		}
 
-		task := NewTask([]byte(liteMessage.Message), liteMessage.QueueId).WithTaskId(liteMessage.Id)
+		task := NewTask([]byte(liteMessage.Message), liteMessage.QueueId).
+			WithTaskId(liteMessage.Id)
+
 		// todo: setup err chan to get write errors
 		q.workerPool.AddWorkNonBlocking(task, nil)
 
@@ -133,14 +135,10 @@ func (q *Server) Start() {
 func (q *Server) Write(ctx context.Context, queueName string, task *Task) error {
 	job := &LiteMessage{
 		Id:        ulid.Make().String(),
+		QueueId:   queueName,
 		Message:   string(task.Payload()),
-		VisibleAt: NewRealClock().Now().Add(30 * time.Second).String(),
+		VisibleAt: NewRealClock().Now().Add(task.Delay()).String(),
 	}
 
-	raw, err := job.Marshal()
-	if err != nil {
-		return err
-	}
-
-	return q.queue.Push(ctx, queueName, raw)
+	return q.queue.Push(ctx, job)
 }

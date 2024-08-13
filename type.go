@@ -97,7 +97,7 @@ func taskLevelFromStatus(l TaskStatus) TaskStatusLevel {
 
 type Queue interface {
 	// Push puts an item on a Queue
-	Push(context.Context, string, []byte) error
+	Push(context.Context, *LiteMessage) error
 
 	// Pop fetches the first visible item from a Queue
 	Pop(context.Context) (LiteMessage, error)
@@ -131,7 +131,7 @@ type LiteMessage struct {
 func (l *LiteMessage) VisibleTime() time.Time {
 	t, err := time.Parse(Rfc3339Milli, l.VisibleAt)
 	if err != nil {
-		return time.Time{}
+		return time.Now()
 	}
 	return t
 }
